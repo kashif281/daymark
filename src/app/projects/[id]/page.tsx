@@ -589,10 +589,18 @@ export default function ProjectPage({
 
           <div className="space-y-5">
             <section className="rounded-2xl border border-[#e6e5e0] bg-white p-5">
-              <h2 className="flex items-center gap-2 text-sm font-bold">
-                <MessageSquareText size={16} className="text-[#7161d6]" />
-                Client messages
-              </h2>
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="flex min-w-0 items-center gap-2 text-sm font-bold">
+                  <MessageSquareText size={16} className="shrink-0 text-[#7161d6]" />
+                  <span className="truncate">Client messages</span>
+                </h2>
+                <button
+                  className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-[#e2e1dc] px-2 py-1 text-[11px] font-semibold hover:bg-[#f8f8f6]"
+                  onClick={() => setMessageComposer("client")}
+                >
+                  <Plus size={12} /> Save
+                </button>
+              </div>
               {messages.length ? (
                 messages.map((message) => (
                   <div key={message.id} className="mt-4">
@@ -611,12 +619,6 @@ export default function ProjectPage({
                   to find.
                 </p>
               )}
-              <button
-                className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-[#e2e1dc] py-2.5 text-xs font-semibold hover:bg-[#f8f8f6]"
-                onClick={() => setMessageComposer("client")}
-              >
-                <Plus size={13} /> Save client message
-              </button>
             </section>
 
             <section className="rounded-2xl border border-[#e6e5e0] bg-white p-5">

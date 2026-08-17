@@ -1239,17 +1239,26 @@ export default function Home() {
               </section>
 
               <section className="rounded-2xl border border-[#e6e5e0] bg-white p-5">
-                <div className="flex items-center justify-between">
-                  <h2 className="flex items-center gap-2 text-[13px] font-bold">
-                    <MessageSquareText size={15} className="text-[#7664d7]" />
-                    Latest client message
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="flex min-w-0 items-center gap-2 text-[13px] font-bold">
+                    <MessageSquareText size={15} className="shrink-0 text-[#7664d7]" />
+                    <span className="truncate">Latest client message</span>
                   </h2>
-                  <button
-                    className="text-[11px] font-semibold text-[#7967d2]"
-                    onClick={() => openView("messages")}
-                  >
-                    View all
-                  </button>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      className="text-[11px] font-semibold text-[#7967d2]"
+                      onClick={() => openView("messages")}
+                    >
+                      View all
+                    </button>
+                    <button
+                      className="inline-flex items-center gap-1 rounded-lg border border-[#e2e1dc] px-2 py-1 text-[11px] font-semibold text-[#666560] hover:bg-[#f8f8f6]"
+                      onClick={() => openMessageComposer("client")}
+                    >
+                      <Plus size={12} />
+                      Save
+                    </button>
+                  </div>
                 </div>
                 {latestMessage ? (
                   <div className="mt-4">
@@ -1277,12 +1286,6 @@ export default function Home() {
                     asked.
                   </p>
                 )}
-                <button
-                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-[#e2e1dc] py-2.5 text-[11px] font-semibold text-[#666560] hover:bg-[#f8f8f6]"
-                  onClick={() => openMessageComposer("client")}
-                >
-                  <Plus size={13} /> Save client message
-                </button>
               </section>
 
               <section className="rounded-2xl border border-[#e6e5e0] bg-white p-5">
@@ -1430,10 +1433,12 @@ export default function Home() {
                   </p>
                 </div>
                 <button
-                  className="rounded-lg bg-[#292927] px-3 py-2 text-xs font-semibold text-white"
+                  className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[#292927] px-2.5 py-1.5 text-[11px] font-semibold text-white sm:px-3 sm:py-2 sm:text-xs"
                   onClick={() => openMessageComposer("client")}
                 >
-                  Save client message
+                  <Plus size={12} className="sm:hidden" />
+                  <span className="sm:hidden">Save</span>
+                  <span className="hidden sm:inline">Save client message</span>
                 </button>
               </div>
               <div className="mt-5 space-y-3">
