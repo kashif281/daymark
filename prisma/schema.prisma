@@ -37,6 +37,7 @@ model User {
   projects          Project[]
   taskComments      TaskComment[]
   todos             Todo[]
+  queuedMessages    QueuedMessage[]
   pushSubscriptions PushSubscription[]
   eodEntries        EodEntry[]
   createdAt         DateTime           @default(now())
@@ -140,8 +141,10 @@ model ClientMessage {
 
 model QueuedMessage {
   id          String        @id @default(cuid())
-  projectId   String
-  project     Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId   String?
+  project     Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
   content     String
   status      MessageStatus @default(DRAFT)
   scheduledAt DateTime?
@@ -149,6 +152,7 @@ model QueuedMessage {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
+  @@index([userId, status])
   @@index([projectId, status])
 }
 

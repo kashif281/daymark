@@ -46,12 +46,12 @@ export async function GET() {
           orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
         },
         clientMessages: { orderBy: { receivedAt: "desc" } },
-        queuedMessages: {
-          where: { status: { not: "SENT" } },
-          orderBy: { createdAt: "desc" },
-          take: 5,
-        },
       },
+    });
+    const queuedMessages = await db.queuedMessage.findMany({
+      where: { userId: user.id, status: { not: "SENT" } },
+      include: { project: { select: { id: true, name: true, color: true } } },
+      orderBy: { createdAt: "desc" },
     });
     const todos = await db.todo.findMany({
       where: { userId: user.id },
@@ -88,11 +88,14 @@ export async function GET() {
           receivedAt: message.receivedAt.toISOString(),
           resolved: Boolean(message.resolvedAt),
         })),
-        queuedMessages: project.queuedMessages.map((message) => ({
-          id: message.id,
-          content: message.content,
-          status: message.status.toLowerCase(),
-        })),
+      })),
+      queuedMessages: queuedMessages.map((message) => ({
+        id: message.id,
+        content: message.content,
+        status: message.status.toLowerCase(),
+        projectId: message.projectId,
+        projectName: message.project?.name ?? null,
+        color: message.project?.color ?? "#9a9994",
       })),
       archivedProjects: projects
         .filter((project) => project.status !== "ACTIVE")

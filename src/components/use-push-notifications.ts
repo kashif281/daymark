@@ -114,10 +114,8 @@ export function usePushNotifications() {
       if (!response.ok) throw new Error("Could not save push subscription.");
 
       setSubscribed(true);
-
-      await fetch("/api/reminders/test-push", { method: "POST" });
       await fetch("/api/reminders/flush", { method: "POST" });
-      setMessage("Notifications are on. A test alert was sent to this phone.");
+      setMessage("Notifications are on for this phone.");
       return true;
     } catch (error) {
       console.error(error);

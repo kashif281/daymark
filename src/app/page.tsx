@@ -63,7 +63,14 @@ type ClientMessage = {
   receivedAt: string;
   resolved?: boolean;
 };
-type QueuedMessage = { id: string; content: string; status: string };
+type QueuedMessage = {
+  id: string;
+  content: string;
+  status: string;
+  projectId?: string | null;
+  projectName?: string | null;
+  color?: string;
+};
 type Todo = {
   id: string;
   title: string;
@@ -118,6 +125,7 @@ export default function Home() {
   const [view, setView] = useState<View>("today");
   const [eodEntries, setEodEntries] = useState<EodItem[]>([]);
   const [todos, setTodos] = useState<Todo[]>([]);
+  const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -154,12 +162,14 @@ export default function Home() {
           projects: Project[];
           archivedProjects?: ArchivedProject[];
           todos: Todo[];
+          queuedMessages?: QueuedMessage[];
         }>;
       })
       .then((data) => {
         setProjects(data.projects);
         setArchivedProjects(data.archivedProjects ?? []);
         setTodos(data.todos);
+        setQueuedMessages(data.queuedMessages ?? []);
         setUser({
           name: data.user.name ?? data.user.email.split("@")[0],
           email: data.user.email,
@@ -206,18 +216,9 @@ export default function Home() {
     [projects],
   );
 
-  const queuedMessages = useMemo(
-    () =>
-      projects.flatMap((project) =>
-        (project.queuedMessages ?? [])
-          .filter((message) => message.status !== "sent")
-          .map((message) => ({
-            message,
-            projectName: project.name,
-            color: project.color,
-          })),
-      ),
-    [projects],
+  const queuedItems = useMemo(
+    () => queuedMessages.filter((message) => message.status !== "sent"),
+    [queuedMessages],
   );
 
   const timelineTasks = useMemo(
@@ -648,7 +649,7 @@ export default function Home() {
   }
 
   function openMessageComposer(type: "client" | "queued") {
-    setMessageProjectId(projects[0]?.id ?? "");
+    setMessageProjectId(type === "queued" ? "" : (projects[0]?.id ?? ""));
     setMessageContent("");
     setMessageSender("");
     setMessageComposer(type);
@@ -656,81 +657,96 @@ export default function Home() {
 
   async function saveMessage() {
     const content = messageContent.trim();
-    const targetProjectId = messageProjectId || projects[0]?.id;
-    if (!content || !targetProjectId || !messageComposer) return;
-
     const type = messageComposer;
-    const temporaryId = `demo-message-${Date.now()}`;
-    const targetProject = projects.find(
-      (project) => project.id === targetProjectId,
-    );
+    if (!content || !type) return;
 
-    const nextProjects = projects.map((project) =>
-      project.id === targetProjectId
-        ? type === "client"
-          ? {
-              ...project,
-              clientMessages: [
-                {
-                  id: temporaryId,
-                  sender: messageSender.trim() || project.client,
-                  content,
-                  receivedAt: new Date().toISOString(),
-                  resolved: false,
-                },
-                ...(project.clientMessages ?? []),
-              ],
-            }
-          : {
-              ...project,
-              queuedMessages: [
-                { id: temporaryId, content, status: "draft" },
-                ...(project.queuedMessages ?? []),
-              ],
-            }
-        : project,
-    );
+    if (type === "client") {
+      const targetProjectId = messageProjectId || projects[0]?.id;
+      const targetProject = projects.find(
+        (project) => project.id === targetProjectId,
+      );
+      if (!targetProjectId || !targetProject) return;
 
-    setProjects(nextProjects);
-    setMessageComposer(null);
-    setMessageContent("");
-    setMessageSender("");
+      const temporaryId = `demo-message-${Date.now()}`;
+      setProjects((current) =>
+        current.map((project) =>
+          project.id === targetProjectId
+            ? {
+                ...project,
+                clientMessages: [
+                  {
+                    id: temporaryId,
+                    sender: messageSender.trim() || project.client,
+                    content,
+                    receivedAt: new Date().toISOString(),
+                    resolved: false,
+                  },
+                  ...(project.clientMessages ?? []),
+                ],
+              }
+            : project,
+        ),
+      );
+      setMessageComposer(null);
+      setMessageContent("");
+      setMessageSender("");
 
-    if (!targetProject) return;
-
-    const response = await fetch(`/api/projects/${targetProjectId}/messages`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type, content, senderName: messageSender }),
-    });
-
-    if (!response.ok) return;
-
-    const data = (await response.json()) as {
-      message: ClientMessage | QueuedMessage;
-    };
-
-    setProjects((current) =>
-      current.map((project) =>
-        project.id === targetProjectId
-          ? type === "client"
+      const response = await fetch(`/api/projects/${targetProjectId}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type, content, senderName: messageSender }),
+      });
+      if (!response.ok) return;
+      const data = (await response.json()) as { message: ClientMessage };
+      setProjects((current) =>
+        current.map((project) =>
+          project.id === targetProjectId
             ? {
                 ...project,
                 clientMessages: (project.clientMessages ?? []).map((message) =>
-                  message.id === temporaryId
-                    ? (data.message as ClientMessage)
-                    : message,
+                  message.id === temporaryId ? data.message : message,
                 ),
               }
-            : {
-                ...project,
-                queuedMessages: (project.queuedMessages ?? []).map((message) =>
-                  message.id === temporaryId
-                    ? (data.message as QueuedMessage)
-                    : message,
-                ),
-              }
-          : project,
+            : project,
+        ),
+      );
+      return;
+    }
+
+    const targetProject = projects.find(
+      (project) => project.id === messageProjectId,
+    );
+    const temporaryId = `demo-queue-${Date.now()}`;
+    const optimistic: QueuedMessage = {
+      id: temporaryId,
+      content,
+      status: "draft",
+      projectId: targetProject?.id ?? null,
+      projectName: targetProject?.name ?? null,
+      color: targetProject?.color ?? "#9a9994",
+    };
+    setQueuedMessages((current) => [optimistic, ...current]);
+    setMessageComposer(null);
+    setMessageContent("");
+
+    const response = await fetch("/api/queue", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        content,
+        projectId: targetProject?.id ?? null,
+      }),
+    });
+    if (!response.ok) {
+      setQueuedMessages((current) =>
+        current.filter((message) => message.id !== temporaryId),
+      );
+      return;
+    }
+    const data = (await response.json()) as { message: QueuedMessage };
+    setQueuedMessages((current) =>
+      current.map((message) =>
+        message.id === temporaryId ? data.message : message,
       ),
     );
   }
@@ -876,7 +892,7 @@ export default function Home() {
             <SidebarItem
               icon={<Inbox size={17} />}
               label="Message queue"
-              badge={queuedMessages.length ? String(queuedMessages.length) : undefined}
+              badge={queuedItems.length ? String(queuedItems.length) : undefined}
               active={view === "queue"}
               onClick={() => openView("queue")}
             />
@@ -1295,18 +1311,18 @@ export default function Home() {
                     Message queue
                   </h2>
                   <span className="rounded-full bg-[#fff0de] px-2 py-0.5 text-[9px] font-bold text-[#a5672c]">
-                    {queuedMessages.length} waiting
+                    {queuedItems.length} waiting
                   </span>
                 </div>
                 <div className="mt-4 space-y-3">
-                  {queuedMessages.length ? (
-                    queuedMessages.map((item) => (
+                  {queuedItems.length ? (
+                    queuedItems.map((item) => (
                       <QueueItem
-                        key={item.message.id}
-                        project={item.projectName}
-                        text={item.message.content}
-                        status={item.message.status}
-                        color={item.color}
+                        key={item.id}
+                        project={item.projectName ?? "General"}
+                        text={item.content}
+                        status={item.status}
+                        color={item.color ?? "#9a9994"}
                       />
                     ))
                   ) : (
@@ -1393,7 +1409,7 @@ export default function Home() {
                     Message queue
                   </h1>
                   <p className="mt-1 text-sm text-[#777671]">
-                    Drafts waiting to be sent
+                    Drafts for any purpose. A project is optional.
                   </p>
                 </div>
                 <button
@@ -1404,14 +1420,14 @@ export default function Home() {
                 </button>
               </div>
               <div className="mt-5 space-y-3">
-                {queuedMessages.length ? (
-                  queuedMessages.map((item) => (
+                {queuedItems.length ? (
+                  queuedItems.map((item) => (
                     <QueueItem
-                      key={item.message.id}
-                      project={item.projectName}
-                      text={item.message.content}
-                      status={item.message.status}
-                      color={item.color}
+                      key={item.id}
+                      project={item.projectName ?? "General"}
+                      text={item.content}
+                      status={item.status}
+                      color={item.color ?? "#9a9994"}
                     />
                   ))
                 ) : (
@@ -1856,7 +1872,7 @@ export default function Home() {
                 <p className="mt-1 text-xs text-[#8c8b86]">
                   {messageComposer === "client"
                     ? "Paste what the client asked for."
-                    : "Draft a reply to send later."}
+                    : "Draft anything to send or reuse later. Project is optional."}
                 </p>
               </div>
               <button
@@ -1873,6 +1889,9 @@ export default function Home() {
               value={messageProjectId}
               onChange={(event) => setMessageProjectId(event.target.value)}
             >
+              {messageComposer === "queued" ? (
+                <option value="">No project</option>
+              ) : null}
               {projects.map((project) => (
                 <option key={project.id} value={project.id}>
                   {project.name}
@@ -1893,7 +1912,7 @@ export default function Home() {
               placeholder={
                 messageComposer === "client"
                   ? "Paste the client message…"
-                  : "Write the message you want to send…"
+                  : "Write a note or message to send later…"
               }
               value={messageContent}
               onChange={(event) => setMessageContent(event.target.value)}

@@ -36,7 +36,7 @@ export async function POST(
 
     if (body.type === "queued") {
       const message = await db.queuedMessage.create({
-        data: { projectId: project.id, content },
+        data: { userId: user.id, projectId: project.id, content },
       });
 
       return NextResponse.json(
