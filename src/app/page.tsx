@@ -18,6 +18,7 @@ import {
   MessageSquareText,
   MoreHorizontal,
   Plus,
+  RotateCcw,
   Search,
   Send,
   Settings,
@@ -31,6 +32,20 @@ import { PwaControls } from "@/components/pwa-controls";
 import { TaskActions } from "@/components/task-actions";
 
 type Status = "todo" | "progress" | "done";
+type View = "today" | "timeline" | "queue" | "eod" | "archive" | "settings";
+type ArchivedProject = {
+  id: string;
+  name: string;
+  client: string;
+  color: string;
+};
+type EodItem = {
+  id: string;
+  date: string;
+  summary: string;
+  blockers: string | null;
+  tomorrow: string | null;
+};
 type Task = {
   id: string;
   title: string;
@@ -93,6 +108,11 @@ const hasClerk = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
 export default function Home() {
   const [projects, setProjects] = useState<Project[]>([]);
+  const [archivedProjects, setArchivedProjects] = useState<ArchivedProject[]>(
+    [],
+  );
+  const [view, setView] = useState<View>("today");
+  const [eodEntries, setEodEntries] = useState<EodItem[]>([]);
   const [todos, setTodos] = useState<Todo[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -127,11 +147,13 @@ export default function Home() {
         return response.json() as Promise<{
           user: { name: string | null; email: string };
           projects: Project[];
+          archivedProjects?: ArchivedProject[];
           todos: Todo[];
         }>;
       })
       .then((data) => {
         setProjects(data.projects);
+        setArchivedProjects(data.archivedProjects ?? []);
         setTodos(data.todos);
         setUser({
           name: data.user.name ?? data.user.email.split("@")[0],
@@ -178,6 +200,27 @@ export default function Home() {
     [projects],
   );
 
+  const timelineTasks = useMemo(
+    () =>
+      projects.flatMap((project) =>
+        project.tasks.map((task) => ({
+          ...task,
+          projectId: project.id,
+          projectName: project.name,
+          projectColor: project.color,
+        })),
+      ),
+    [projects],
+  );
+
+  const viewLabel: Record<View, string> = {
+    today: "Today",
+    timeline: "Timeline",
+    queue: "Message queue",
+    eod: "EOD entries",
+    archive: "Archive",
+    settings: "Settings",
+  };
   const firstName = user.name.split(" ")[0] || "there";
   const initials = user.name
     .split(" ")
@@ -413,6 +456,98 @@ export default function Home() {
     );
   }
 
+  function openView(next: View) {
+    setView(next);
+    setSidebarOpen(false);
+    if (next === "eod") {
+      void loadEodEntries();
+    }
+  }
+
+  async function loadEodEntries() {
+    const response = await fetch("/api/eod");
+    if (!response.ok) return;
+    const data = (await response.json()) as { entries: EodItem[] };
+    setEodEntries(data.entries);
+  }
+
+  async function archiveProject(project: Project) {
+    const previousProjects = projects;
+    const previousArchived = archivedProjects;
+    setProjects((current) => current.filter((item) => item.id !== project.id));
+    setArchivedProjects((current) => [
+      {
+        id: project.id,
+        name: project.name,
+        client: project.client,
+        color: project.color,
+      },
+      ...current,
+    ]);
+    setRenameProjectId("");
+
+    const response = await fetch(`/api/projects/${project.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "archived" }),
+    });
+
+    if (!response.ok) {
+      setProjects(previousProjects);
+      setArchivedProjects(previousArchived);
+    }
+  }
+
+  async function restoreProject(project: ArchivedProject) {
+    const previousProjects = projects;
+    const previousArchived = archivedProjects;
+    setArchivedProjects((current) =>
+      current.filter((item) => item.id !== project.id),
+    );
+    setProjects((current) => [
+      ...current,
+      {
+        id: project.id,
+        name: project.name,
+        client: project.client,
+        color: project.color,
+        tasks: [],
+      },
+    ]);
+
+    const response = await fetch(`/api/projects/${project.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "active" }),
+    });
+
+    if (!response.ok) {
+      setProjects(previousProjects);
+      setArchivedProjects(previousArchived);
+      return;
+    }
+
+    const dashboard = await fetch("/api/dashboard");
+    if (!dashboard.ok) return;
+    const data = (await dashboard.json()) as {
+      projects: Project[];
+      archivedProjects?: ArchivedProject[];
+    };
+    setProjects(data.projects);
+    setArchivedProjects(data.archivedProjects ?? []);
+  }
+
+  async function deleteProject(projectId: string) {
+    const previous = archivedProjects;
+    setArchivedProjects((current) =>
+      current.filter((project) => project.id !== projectId),
+    );
+    const response = await fetch(`/api/projects/${projectId}`, {
+      method: "DELETE",
+    });
+    if (!response.ok) setArchivedProjects(previous);
+  }
+
   async function addTodo() {
     const title = newTodo.trim();
     if (!title) return;
@@ -630,14 +765,31 @@ export default function Home() {
 
         <div className="-mx-1 min-h-0 flex-1 overflow-y-auto overscroll-contain px-1">
           <nav className="mt-8 space-y-1 text-[14px]">
-            <SidebarItem icon={<LayoutGrid size={17} />} label="Today" active />
-            <SidebarItem icon={<CalendarDays size={17} />} label="Timeline" />
+            <SidebarItem
+              icon={<LayoutGrid size={17} />}
+              label="Today"
+              active={view === "today"}
+              onClick={() => openView("today")}
+            />
+            <SidebarItem
+              icon={<CalendarDays size={17} />}
+              label="Timeline"
+              active={view === "timeline"}
+              onClick={() => openView("timeline")}
+            />
             <SidebarItem
               icon={<Inbox size={17} />}
               label="Message queue"
               badge={queuedMessages.length ? String(queuedMessages.length) : undefined}
+              active={view === "queue"}
+              onClick={() => openView("queue")}
             />
-            <SidebarItem icon={<FileText size={17} />} label="EOD entries" />
+            <SidebarItem
+              icon={<FileText size={17} />}
+              label="EOD entries"
+              active={view === "eod"}
+              onClick={() => openView("eod")}
+            />
           </nav>
 
           <div className="mt-8 flex items-center justify-between px-2">
@@ -671,8 +823,19 @@ export default function Home() {
         </div>
 
         <div className="shrink-0 space-y-1 border-t border-[#e8e7e3] pt-3 text-[13px]">
-          <SidebarItem icon={<Archive size={16} />} label="Archive" />
-          <SidebarItem icon={<Settings size={16} />} label="Settings" />
+          <SidebarItem
+            icon={<Archive size={16} />}
+            label="Archive"
+            badge={archivedProjects.length ? String(archivedProjects.length) : undefined}
+            active={view === "archive"}
+            onClick={() => openView("archive")}
+          />
+          <SidebarItem
+            icon={<Settings size={16} />}
+            label="Settings"
+            active={view === "settings"}
+            onClick={() => openView("settings")}
+          />
           <div className="mt-3 flex items-center gap-2.5 rounded-xl px-2 py-2">
             {hasClerk ? (
               <UserButton />
@@ -702,7 +865,7 @@ export default function Home() {
             >
               <Menu size={19} />
             </button>
-            <span className="text-sm font-semibold">Today</span>
+            <span className="text-sm font-semibold">{viewLabel[view]}</span>
             <span className="hidden text-sm text-[#a3a29d] sm:inline">
               / {todayLabel}
             </span>
@@ -725,6 +888,8 @@ export default function Home() {
         </header>
 
         <main className="mx-auto max-w-[1220px] px-5 py-8 sm:px-8 lg:py-10">
+          {view === "today" && (
+          <>
           <section>
             <p className="text-sm font-medium text-[#85847f]">
               {greeting}, {firstName}
@@ -1041,6 +1206,211 @@ export default function Home() {
               </section>
             </aside>
           </div>
+          </>
+          )}
+
+          {view === "timeline" && (
+            <section className="rounded-2xl border border-[#e6e5e0] bg-white p-5">
+              <h1 className="text-2xl font-bold tracking-[-0.04em]">Timeline</h1>
+              <p className="mt-1 text-sm text-[#777671]">
+                Today&apos;s tasks across every active project
+              </p>
+              <div className="mt-5 space-y-2">
+                {timelineTasks.length ? (
+                  timelineTasks.map((task) => (
+                    <div
+                      key={task.id}
+                      className="flex items-start gap-3 rounded-xl border border-[#ecebe7] px-4 py-3"
+                    >
+                      <span
+                        className="mt-1.5 size-2 shrink-0 rounded-full"
+                        style={{ background: task.projectColor }}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[11px] font-semibold text-[#9a9994]">
+                          {task.projectName}
+                        </p>
+                        <p className="mt-0.5 text-sm">{task.title}</p>
+                      </div>
+                      <span
+                        className={`rounded-lg px-2 py-1 text-[10px] font-semibold ${statusStyle[task.status].className}`}
+                      >
+                        {statusStyle[task.status].label}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-[#8f8e89]">No tasks for today.</p>
+                )}
+              </div>
+            </section>
+          )}
+
+          {view === "queue" && (
+            <section className="rounded-2xl border border-[#e6e5e0] bg-white p-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h1 className="text-2xl font-bold tracking-[-0.04em]">
+                    Message queue
+                  </h1>
+                  <p className="mt-1 text-sm text-[#777671]">
+                    Drafts waiting to be sent
+                  </p>
+                </div>
+                <button
+                  className="rounded-lg bg-[#292927] px-3 py-2 text-xs font-semibold text-white"
+                  onClick={() => openMessageComposer("queued")}
+                >
+                  Queue a message
+                </button>
+              </div>
+              <div className="mt-5 space-y-3">
+                {queuedMessages.length ? (
+                  queuedMessages.map((item) => (
+                    <QueueItem
+                      key={item.message.id}
+                      project={item.projectName}
+                      text={item.message.content}
+                      status={item.message.status}
+                      color={item.color}
+                    />
+                  ))
+                ) : (
+                  <p className="text-sm text-[#8f8e89]">Nothing queued yet.</p>
+                )}
+              </div>
+            </section>
+          )}
+
+          {view === "eod" && (
+            <section className="rounded-2xl border border-[#e6e5e0] bg-white p-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h1 className="text-2xl font-bold tracking-[-0.04em]">
+                    EOD entries
+                  </h1>
+                  <p className="mt-1 text-sm text-[#777671]">
+                    Daily wrap-ups you have saved
+                  </p>
+                </div>
+                <button
+                  className="rounded-lg bg-[#292927] px-3 py-2 text-xs font-semibold text-white"
+                  onClick={() => setEodOpen(true)}
+                >
+                  Write today&apos;s EOD
+                </button>
+              </div>
+              <div className="mt-5 space-y-3">
+                {eodEntries.length ? (
+                  eodEntries.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="rounded-xl border border-[#ecebe7] p-4"
+                    >
+                      <p className="text-[11px] font-bold text-[#9a9994]">
+                        {new Intl.DateTimeFormat(undefined, {
+                          weekday: "long",
+                          month: "long",
+                          day: "numeric",
+                        }).format(new Date(entry.date))}
+                      </p>
+                      <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
+                        {entry.summary}
+                      </p>
+                      {entry.blockers ? (
+                        <p className="mt-2 text-xs text-[#8f8e89]">
+                          Blockers: {entry.blockers}
+                        </p>
+                      ) : null}
+                      {entry.tomorrow ? (
+                        <p className="mt-1 text-xs text-[#8f8e89]">
+                          Tomorrow: {entry.tomorrow}
+                        </p>
+                      ) : null}
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-[#8f8e89]">
+                    No EOD entries yet. Write today&apos;s wrap-up to start the log.
+                  </p>
+                )}
+              </div>
+            </section>
+          )}
+
+          {view === "archive" && (
+            <section className="rounded-2xl border border-[#e6e5e0] bg-white p-5">
+              <h1 className="text-2xl font-bold tracking-[-0.04em]">Archive</h1>
+              <p className="mt-1 text-sm text-[#777671]">
+                Archived projects stay here until you restore or permanently
+                delete them
+              </p>
+              <div className="mt-5 space-y-2">
+                {archivedProjects.length ? (
+                  archivedProjects.map((project) => (
+                    <div
+                      key={project.id}
+                      className="flex items-center gap-3 rounded-xl border border-[#ecebe7] px-4 py-3"
+                    >
+                      <span
+                        className="size-2.5 rounded-full"
+                        style={{ background: project.color }}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold">
+                          {project.name}
+                        </p>
+                        <p className="truncate text-[11px] text-[#9a9994]">
+                          {project.client}
+                        </p>
+                      </div>
+                      <button
+                        className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-[#5f4db9] hover:bg-[#eeecfa]"
+                        onClick={() => void restoreProject(project)}
+                      >
+                        <RotateCcw size={13} /> Restore
+                      </button>
+                      <button
+                        className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-[#a7463d] hover:bg-[#fff0ee]"
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              `Permanently delete ${project.name}? This cannot be undone.`,
+                            )
+                          ) {
+                            void deleteProject(project.id);
+                          }
+                        }}
+                      >
+                        <Trash2 size={13} /> Delete
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-[#8f8e89]">
+                    No archived projects. Use a project&apos;s menu to archive it.
+                  </p>
+                )}
+              </div>
+            </section>
+          )}
+
+          {view === "settings" && (
+            <section className="space-y-5">
+              <div>
+                <h1 className="text-2xl font-bold tracking-[-0.04em]">Settings</h1>
+                <p className="mt-1 text-sm text-[#777671]">
+                  Notifications, install, and account
+                </p>
+              </div>
+              <PwaControls />
+              <div className="rounded-2xl border border-[#e6e5e0] bg-white p-5">
+                <p className="text-sm font-bold">Account</p>
+                <p className="mt-2 text-sm">{user.name}</p>
+                <p className="text-xs text-[#8f8e89]">{user.email}</p>
+              </div>
+            </section>
+          )}
         </main>
       </div>
 
@@ -1252,7 +1622,19 @@ export default function Home() {
               value={editProjectClient}
               onChange={(event) => setEditProjectClient(event.target.value)}
             />
-            <div className="mt-5 flex justify-end gap-2">
+            <div className="mt-5 flex items-center justify-between gap-2">
+              <button
+                className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-[#a7463d] hover:bg-[#fff0ee]"
+                onClick={() => {
+                  const project = projects.find(
+                    (item) => item.id === renameProjectId,
+                  );
+                  if (project) void archiveProject(project);
+                }}
+              >
+                <Archive size={14} /> Archive
+              </button>
+              <div className="flex gap-2">
               <button
                 className="rounded-lg px-4 py-2 text-xs font-semibold text-[#6e6d68] hover:bg-[#f3f3f0]"
                 onClick={() => setRenameProjectId("")}
@@ -1266,6 +1648,7 @@ export default function Home() {
               >
                 Save
               </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1343,7 +1726,14 @@ export default function Home() {
           </div>
         </div>
       )}
-      {eodOpen ? <EodModal onClose={() => setEodOpen(false)} /> : null}
+      {eodOpen ? (
+        <EodModal
+          onClose={() => {
+            setEodOpen(false);
+            if (view === "eod") void loadEodEntries();
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -1353,11 +1743,13 @@ function SidebarItem({
   label,
   active = false,
   badge,
+  onClick,
 }: {
   icon: ReactNode;
   label: string;
   active?: boolean;
   badge?: string;
+  onClick?: () => void;
 }) {
   return (
     <button
@@ -1366,6 +1758,7 @@ function SidebarItem({
           ? "bg-[#eeecfa] font-semibold text-[#5e4db7]"
           : "text-[#666560] hover:bg-[#f0f0ed]"
       }`}
+      onClick={onClick}
     >
       {icon}
       <span className="flex-1">{label}</span>

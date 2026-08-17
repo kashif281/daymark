@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Archive,
   ArrowLeft,
   Check,
   Clock3,
@@ -9,10 +10,13 @@ import {
   MessageSquareText,
   MoreHorizontal,
   Plus,
+  RotateCcw,
   Send,
+  Trash2,
   X,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { use, useEffect, useMemo, useState } from "react";
 import { EodModal } from "@/components/eod-modal";
 import { TaskActions } from "@/components/task-actions";
@@ -37,6 +41,7 @@ type Project = {
   name: string;
   client: string;
   color: string;
+  archived?: boolean;
   tasks: Task[];
   clientMessages?: ClientMessage[];
   queuedMessages?: QueuedMessage[];
@@ -66,6 +71,7 @@ export default function ProjectPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const router = useRouter();
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [composerOpen, setComposerOpen] = useState(false);
@@ -244,6 +250,43 @@ export default function ProjectPage({
     );
   }
 
+  async function archiveProject() {
+    if (!project) return;
+    const response = await fetch(`/api/projects/${project.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "archived" }),
+    });
+    if (response.ok) router.push("/");
+  }
+
+  async function restoreProject() {
+    if (!project) return;
+    const response = await fetch(`/api/projects/${project.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "active" }),
+    });
+    if (!response.ok) return;
+    setProject({ ...project, archived: false });
+    setRenameOpen(false);
+  }
+
+  async function deleteProject() {
+    if (!project) return;
+    if (
+      !window.confirm(
+        `Permanently delete ${project.name}? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    const response = await fetch(`/api/projects/${project.id}`, {
+      method: "DELETE",
+    });
+    if (response.ok) router.push("/");
+  }
+
   async function saveMessage() {
     const content = messageContent.trim();
     if (!project || !content || !messageComposer) return;
@@ -395,6 +438,11 @@ export default function ProjectPage({
             <h1 className="mt-2 text-3xl font-bold tracking-[-0.04em] sm:text-4xl">
               {project.name}
             </h1>
+            {project.archived ? (
+              <p className="mt-2 text-sm font-semibold text-[#a5672c]">
+                This project is archived
+              </p>
+            ) : null}
             <p className="mt-2 text-sm text-[#85847f]">
               {taskCounts.done} of {taskCounts.total} tasks completed today
             </p>
@@ -613,20 +661,45 @@ export default function ProjectPage({
               value={editClient}
               onChange={(event) => setEditClient(event.target.value)}
             />
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                className="rounded-lg px-4 py-2 text-xs font-semibold text-[#6e6d68] hover:bg-[#f3f3f0]"
-                onClick={() => setRenameOpen(false)}
-              >
-                Cancel
-              </button>
-              <button
-                className="rounded-lg bg-[#6d5bd0] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
-                disabled={!editName.trim()}
-                onClick={() => void saveRename()}
-              >
-                Save
-              </button>
+            <div className="mt-5 flex items-center justify-between gap-2">
+              {project.archived ? (
+                <button
+                  className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-[#5f4db9] hover:bg-[#eeecfa]"
+                  onClick={() => void restoreProject()}
+                >
+                  <RotateCcw size={14} /> Restore
+                </button>
+              ) : (
+                <button
+                  className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-[#a7463d] hover:bg-[#fff0ee]"
+                  onClick={() => void archiveProject()}
+                >
+                  <Archive size={14} /> Archive
+                </button>
+              )}
+              <div className="flex gap-2">
+                {project.archived ? (
+                  <button
+                    className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-[#a7463d] hover:bg-[#fff0ee]"
+                    onClick={() => void deleteProject()}
+                  >
+                    <Trash2 size={14} /> Delete
+                  </button>
+                ) : null}
+                <button
+                  className="rounded-lg px-4 py-2 text-xs font-semibold text-[#6e6d68] hover:bg-[#f3f3f0]"
+                  onClick={() => setRenameOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="rounded-lg bg-[#6d5bd0] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                  disabled={!editName.trim()}
+                  onClick={() => void saveRename()}
+                >
+                  Save
+                </button>
+              </div>
             </div>
           </div>
         </div>

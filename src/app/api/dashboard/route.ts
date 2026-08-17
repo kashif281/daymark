@@ -38,7 +38,7 @@ export async function GET() {
     }
 
     const projects = await db.project.findMany({
-      where: { userId: user.id, status: "ACTIVE" },
+      where: { userId: user.id },
       orderBy: { createdAt: "asc" },
       include: {
         tasks: {
@@ -67,7 +67,9 @@ export async function GET() {
         reminderAt: todo.reminderAt?.toISOString() ?? null,
         reminderSentAt: todo.reminderSentAt?.toISOString() ?? null,
       })),
-      projects: projects.map((project) => ({
+      projects: projects
+        .filter((project) => project.status === "ACTIVE")
+        .map((project) => ({
         id: project.id,
         name: project.name,
         client: project.clientName ?? "No client",
@@ -91,6 +93,14 @@ export async function GET() {
           status: message.status.toLowerCase(),
         })),
       })),
+      archivedProjects: projects
+        .filter((project) => project.status !== "ACTIVE")
+        .map((project) => ({
+          id: project.id,
+          name: project.name,
+          client: project.clientName ?? "No client",
+          color: project.color,
+        })),
     });
   } catch (error) {
     return handleError(error);

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { TaskStatus } from "@/generated/prisma/enums";
+import { ProjectStatus, TaskStatus } from "@/generated/prisma/enums";
 import { requireAppUser } from "@/lib/current-app-user";
 import { getDb } from "@/lib/db";
 
@@ -35,6 +35,7 @@ export async function GET(
         name: project.name,
         client: project.clientName ?? "No client",
         color: project.color,
+        archived: project.status !== ProjectStatus.ACTIVE,
         tasks: project.tasks.map((task) => ({
           id: task.id,
           title: task.title,
@@ -71,12 +72,41 @@ export async function PATCH(
       name?: string;
       clientName?: string | null;
       color?: string;
+      status?: "active" | "archived";
     };
 
-    const name = body.name?.trim();
-    if (!name) {
+    const data: {
+      name?: string;
+      clientName?: string | null;
+      color?: string;
+      status?: ProjectStatus;
+    } = {};
+
+    if (body.name !== undefined) {
+      const name = body.name.trim();
+      if (!name) {
+        return NextResponse.json(
+          { error: "Project name is required." },
+          { status: 400 },
+        );
+      }
+      data.name = name;
+    }
+
+    if (body.clientName !== undefined) {
+      data.clientName = body.clientName?.trim() || null;
+    }
+
+    if (body.color !== undefined) {
+      data.color = body.color.trim() || undefined;
+    }
+
+    if (body.status === "active") data.status = ProjectStatus.ACTIVE;
+    if (body.status === "archived") data.status = ProjectStatus.PAUSED;
+
+    if (Object.keys(data).length === 0) {
       return NextResponse.json(
-        { error: "Project name is required." },
+        { error: "No project updates were provided." },
         { status: 400 },
       );
     }
@@ -93,14 +123,7 @@ export async function PATCH(
 
     const project = await db.project.update({
       where: { id: existing.id },
-      data: {
-        name,
-        clientName:
-          body.clientName === undefined
-            ? undefined
-            : body.clientName?.trim() || null,
-        color: body.color?.trim() || undefined,
-      },
+      data,
     });
 
     return NextResponse.json({
@@ -109,8 +132,33 @@ export async function PATCH(
         name: project.name,
         client: project.clientName ?? "No client",
         color: project.color,
+        archived: project.status !== ProjectStatus.ACTIVE,
       },
     });
+  } catch (error) {
+    return handleError(error);
+  }
+}
+
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const user = await requireAppUser();
+    const { id } = await params;
+    const db = getDb();
+    const existing = await db.project.findFirst({
+      where: { id, userId: user.id },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      return NextResponse.json({ error: "Project not found." }, { status: 404 });
+    }
+
+    await db.project.delete({ where: { id: existing.id } });
+    return NextResponse.json({ deleted: true });
   } catch (error) {
     return handleError(error);
   }

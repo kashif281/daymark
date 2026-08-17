@@ -7,6 +7,33 @@ function todayUtc() {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 }
 
+export async function GET() {
+  try {
+    const user = await requireAppUser();
+    const entries = await getDb().eodEntry.findMany({
+      where: { userId: user.id },
+      orderBy: { entryDate: "desc" },
+      take: 30,
+    });
+
+    return NextResponse.json({
+      entries: entries.map((entry) => ({
+        id: entry.id,
+        date: entry.entryDate.toISOString(),
+        summary: entry.summary,
+        blockers: entry.blockers,
+        tomorrow: entry.tomorrow,
+      })),
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "UNAUTHORIZED") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    console.error(error);
+    return NextResponse.json({ error: "Something went wrong." }, { status: 500 });
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const user = await requireAppUser();
