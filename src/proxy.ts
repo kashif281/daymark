@@ -5,7 +5,9 @@ const authenticatedProxy = clerkMiddleware(async (auth, request) => {
   const isPublicRoute =
     request.nextUrl.pathname.startsWith("/sign-in") ||
     request.nextUrl.pathname.startsWith("/sign-up") ||
-    request.nextUrl.pathname === "/api/cron/reminders";
+    request.nextUrl.pathname === "/api/cron/reminders" ||
+    request.nextUrl.pathname === "/sw.js" ||
+    request.nextUrl.pathname === "/manifest.webmanifest";
 
   if (!isPublicRoute) {
     await auth.protect();
