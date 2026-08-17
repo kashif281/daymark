@@ -20,6 +20,7 @@ import { useRouter } from "next/navigation";
 import { use, useEffect, useMemo, useState } from "react";
 import { EodModal } from "@/components/eod-modal";
 import { ClientMessageCard } from "@/components/client-message-card";
+import { PwaInstallHeaderButton } from "@/components/pwa-install-prompt";
 import { TaskActions } from "@/components/task-actions";
 
 type Status = "todo" | "progress" | "done";
@@ -456,13 +457,16 @@ export default function ProjectPage({
           >
             <ArrowLeft size={16} /> Today
           </Link>
-          <button
-            aria-label="Rename project"
-            className="rounded-lg p-2 text-[#777671] hover:bg-[#f2f2ef]"
-            onClick={openRename}
-          >
-            <MoreHorizontal size={19} />
-          </button>
+          <div className="flex items-center gap-1.5">
+            <PwaInstallHeaderButton />
+            <button
+              aria-label="Rename project"
+              className="rounded-lg p-2 text-[#777671] hover:bg-[#f2f2ef]"
+              onClick={openRename}
+            >
+              <MoreHorizontal size={19} />
+            </button>
+          </div>
         </div>
       </header>
 

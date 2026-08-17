@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { EodModal } from "@/components/eod-modal";
+import { PwaInstallHeaderButton } from "@/components/pwa-install-prompt";
 import { PwaControls } from "@/components/pwa-controls";
 import { ClientMessageCard } from "@/components/client-message-card";
 import { TaskActions } from "@/components/task-actions";
@@ -968,6 +969,7 @@ export default function Home() {
             </span>
           </div>
           <div className="flex items-center gap-1.5">
+            <PwaInstallHeaderButton />
             <button aria-label="Search" className="rounded-lg p-2 text-[#777771] hover:bg-white">
               <Search size={18} />
             </button>
@@ -979,7 +981,8 @@ export default function Home() {
               className="ml-2 flex items-center gap-2 rounded-lg bg-[#292927] px-3.5 py-2 text-[13px] font-semibold text-white shadow-sm hover:bg-black"
               onClick={() => openTaskComposer()}
             >
-              <Plus size={15} /> Add task
+              <Plus size={15} />
+              <span className="hidden sm:inline">Add task</span>
             </button>
           </div>
         </header>

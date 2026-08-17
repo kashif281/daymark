@@ -2,17 +2,17 @@
 
 import { Bell, Download, Smartphone } from "lucide-react";
 import { useEffect, useState } from "react";
-
-type InstallPromptEvent = Event & {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
-};
+import { IosInstallHelp, usePwaInstall } from "@/components/pwa-install-prompt";
 
 export function PwaControls() {
-  const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(
-    null,
-  );
-  const [installed, setInstalled] = useState(false);
+  const {
+    installed,
+    iosKind,
+    message: installMessage,
+    showIosHelp,
+    setShowIosHelp,
+    install,
+  } = usePwaInstall();
   const [pushSupported, setPushSupported] = useState(false);
   const [pushConfigured, setPushConfigured] = useState(false);
   const [subscribed, setSubscribed] = useState(false);
@@ -21,32 +21,13 @@ export function PwaControls() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    const standalone =
-      window.matchMedia("(display-mode: standalone)").matches ||
-      ("standalone" in navigator &&
-        Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
     queueMicrotask(() => {
-      setInstalled(standalone);
       setPushSupported(
         "serviceWorker" in navigator &&
           "PushManager" in window &&
           "Notification" in window,
       );
     });
-
-    const captureInstallPrompt = () => {
-      if (window.__daymarkInstallPrompt) {
-        setInstallPrompt(window.__daymarkInstallPrompt);
-      }
-    };
-    const markInstalled = () => {
-      setInstalled(true);
-      setInstallPrompt(null);
-      window.__daymarkInstallPrompt = undefined;
-    };
-    captureInstallPrompt();
-    window.addEventListener("daymark-install-ready", captureInstallPrompt);
-    window.addEventListener("appinstalled", markInstalled);
 
     if ("serviceWorker" in navigator) {
       void navigator.serviceWorker.register("/sw.js").then(async () => {
@@ -65,27 +46,7 @@ export function PwaControls() {
         setSubscribed(Boolean(current) && data.subscribed);
       });
     }
-
-    return () => {
-      window.removeEventListener("daymark-install-ready", captureInstallPrompt);
-      window.removeEventListener("appinstalled", markInstalled);
-    };
   }, []);
-
-  async function install() {
-    const promptEvent = installPrompt || window.__daymarkInstallPrompt;
-    if (promptEvent) {
-      await promptEvent.prompt();
-      const choice = await promptEvent.userChoice;
-      if (choice.outcome === "accepted") setInstalled(true);
-      setInstallPrompt(null);
-      window.__daymarkInstallPrompt = undefined;
-      return;
-    }
-    setMessage(
-      "In Chrome, click the install icon in the address bar, or open the menu and choose Install Daymark / Cast, save, and share → Install page as app.",
-    );
-  }
 
   async function togglePush() {
     if (!pushSupported || !publicKey) return;
@@ -202,8 +163,13 @@ export function PwaControls() {
           Push keys still need to be generated for this environment.
         </p>
       ) : null}
-      {message ? (
-        <p className="mt-2 text-[10px] leading-4 text-[#777671]">{message}</p>
+      {installMessage || message ? (
+        <p className="mt-2 text-[10px] leading-4 text-[#777671]">
+          {installMessage || message}
+        </p>
+      ) : null}
+      {showIosHelp && iosKind ? (
+        <IosInstallHelp kind={iosKind} onClose={() => setShowIosHelp(false)} />
       ) : null}
     </section>
   );
