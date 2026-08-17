@@ -45,7 +45,7 @@ export async function GET() {
           where: { workDate: todayUtc() },
           orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
         },
-        clientMessages: { orderBy: { receivedAt: "desc" }, take: 3 },
+        clientMessages: { orderBy: { receivedAt: "desc" } },
         queuedMessages: {
           where: { status: { not: "SENT" } },
           orderBy: { createdAt: "desc" },
@@ -86,6 +86,7 @@ export async function GET() {
           sender: message.senderName ?? "Client",
           content: message.content,
           receivedAt: message.receivedAt.toISOString(),
+          resolved: Boolean(message.resolvedAt),
         })),
         queuedMessages: project.queuedMessages.map((message) => ({
           id: message.id,

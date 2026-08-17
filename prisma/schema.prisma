@@ -131,9 +131,11 @@ model ClientMessage {
   content    String
   senderName String?
   receivedAt DateTime @default(now())
+  resolvedAt DateTime?
   createdAt  DateTime @default(now())
 
   @@index([projectId, receivedAt])
+  @@index([projectId, resolvedAt])
 }
 
 model QueuedMessage {

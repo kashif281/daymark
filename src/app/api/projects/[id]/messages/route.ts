@@ -66,6 +66,7 @@ export async function POST(
           sender: message.senderName ?? "Client",
           content: message.content,
           receivedAt: message.receivedAt.toISOString(),
+          resolved: Boolean(message.resolvedAt),
         },
       },
       { status: 201 },
@@ -83,18 +84,59 @@ export async function PATCH(
     const user = await requireAppUser();
     const { id } = await params;
     const body = (await request.json()) as {
+      type?: "client" | "queued";
       messageId?: string;
       status?: "draft" | "ready" | "sent";
+      resolved?: boolean;
     };
 
-    if (!body.messageId || !body.status) {
+    if (!body.messageId) {
       return NextResponse.json(
-        { error: "Message and status are required." },
+        { error: "Message is required." },
         { status: 400 },
       );
     }
 
     const db = getDb();
+
+    if (body.type === "client" || body.resolved !== undefined) {
+      const existing = await db.clientMessage.findFirst({
+        where: {
+          id: body.messageId,
+          projectId: id,
+          project: { userId: user.id },
+        },
+        select: { id: true },
+      });
+
+      if (!existing) {
+        return NextResponse.json({ error: "Message not found." }, { status: 404 });
+      }
+
+      const message = await db.clientMessage.update({
+        where: { id: existing.id },
+        data: {
+          resolvedAt: body.resolved === false ? null : new Date(),
+        },
+      });
+
+      return NextResponse.json({
+        message: {
+          id: message.id,
+          sender: message.senderName ?? "Client",
+          content: message.content,
+          receivedAt: message.receivedAt.toISOString(),
+          resolved: Boolean(message.resolvedAt),
+        },
+      });
+    }
+
+    if (!body.status) {
+      return NextResponse.json(
+        { error: "Message and status are required." },
+        { status: 400 },
+      );
+    }
     const existing = await db.queuedMessage.findFirst({
       where: {
         id: body.messageId,
@@ -124,6 +166,61 @@ export async function PATCH(
         status: message.status.toLowerCase(),
       },
     });
+  } catch (error) {
+    return handleError(error);
+  }
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const user = await requireAppUser();
+    const { id } = await params;
+    const body = (await request.json()) as {
+      type?: "client" | "queued";
+      messageId?: string;
+    };
+
+    if (!body.messageId) {
+      return NextResponse.json(
+        { error: "Message is required." },
+        { status: 400 },
+      );
+    }
+
+    const db = getDb();
+
+    if (body.type === "queued") {
+      const existing = await db.queuedMessage.findFirst({
+        where: {
+          id: body.messageId,
+          projectId: id,
+          project: { userId: user.id },
+        },
+        select: { id: true },
+      });
+      if (!existing) {
+        return NextResponse.json({ error: "Message not found." }, { status: 404 });
+      }
+      await db.queuedMessage.delete({ where: { id: existing.id } });
+      return NextResponse.json({ deleted: true });
+    }
+
+    const existing = await db.clientMessage.findFirst({
+      where: {
+        id: body.messageId,
+        projectId: id,
+        project: { userId: user.id },
+      },
+      select: { id: true },
+    });
+    if (!existing) {
+      return NextResponse.json({ error: "Message not found." }, { status: 404 });
+    }
+    await db.clientMessage.delete({ where: { id: existing.id } });
+    return NextResponse.json({ deleted: true });
   } catch (error) {
     return handleError(error);
   }

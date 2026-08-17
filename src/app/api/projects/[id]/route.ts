@@ -48,6 +48,7 @@ export async function GET(
           sender: message.senderName ?? "Client",
           content: message.content,
           receivedAt: message.receivedAt.toISOString(),
+          resolved: Boolean(message.resolvedAt),
         })),
         queuedMessages: project.queuedMessages.map((message) => ({
           id: message.id,

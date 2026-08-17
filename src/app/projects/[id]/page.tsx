@@ -19,6 +19,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useEffect, useMemo, useState } from "react";
 import { EodModal } from "@/components/eod-modal";
+import { ClientMessageCard } from "@/components/client-message-card";
 import { TaskActions } from "@/components/task-actions";
 
 type Status = "todo" | "progress" | "done";
@@ -34,6 +35,7 @@ type ClientMessage = {
   sender: string;
   content: string;
   receivedAt: string;
+  resolved?: boolean;
 };
 type QueuedMessage = { id: string; content: string; status: string };
 type Project = {
@@ -302,6 +304,7 @@ export default function ProjectPage({
                 sender: messageSender.trim() || project.client,
                 content,
                 receivedAt: new Date().toISOString(),
+                resolved: false,
               },
               ...(project.clientMessages ?? []),
             ],
@@ -354,6 +357,46 @@ export default function ProjectPage({
           }
         : current,
     );
+  }
+
+  async function setClientMessageResolved(messageId: string, resolved: boolean) {
+    if (!project) return;
+    setProject({
+      ...project,
+      clientMessages: (project.clientMessages ?? []).map((message) =>
+        message.id === messageId ? { ...message, resolved } : message,
+      ),
+    });
+    const response = await fetch(`/api/projects/${project.id}/messages`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "client", messageId, resolved }),
+    });
+    if (!response.ok) {
+      setProject({
+        ...project,
+        clientMessages: (project.clientMessages ?? []).map((message) =>
+          message.id === messageId ? { ...message, resolved: !resolved } : message,
+        ),
+      });
+    }
+  }
+
+  async function deleteClientMessage(messageId: string) {
+    if (!project) return;
+    const previous = project;
+    setProject({
+      ...project,
+      clientMessages: (project.clientMessages ?? []).filter(
+        (message) => message.id !== messageId,
+      ),
+    });
+    const response = await fetch(`/api/projects/${project.id}/messages`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "client", messageId }),
+    });
+    if (!response.ok) setProject(previous);
   }
 
   function updateQueuedStatus(messageId: string, status: string) {
@@ -548,11 +591,14 @@ export default function ProjectPage({
               </h2>
               {messages.length ? (
                 messages.map((message) => (
-                  <div key={message.id} className="mt-4 rounded-xl bg-[#f7f6fb] p-4">
-                    <p className="text-xs font-bold">{message.sender}</p>
-                    <p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-[#686762]">
-                      {message.content}
-                    </p>
+                  <div key={message.id} className="mt-4">
+                    <ClientMessageCard
+                      message={message}
+                      onResolve={(resolved) =>
+                        void setClientMessageResolved(message.id, resolved)
+                      }
+                      onDelete={() => void deleteClientMessage(message.id)}
+                    />
                   </div>
                 ))
               ) : (

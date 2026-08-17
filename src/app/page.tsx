@@ -29,10 +29,11 @@ import {
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { EodModal } from "@/components/eod-modal";
 import { PwaControls } from "@/components/pwa-controls";
+import { ClientMessageCard } from "@/components/client-message-card";
 import { TaskActions } from "@/components/task-actions";
 
 type Status = "todo" | "progress" | "done";
-type View = "today" | "timeline" | "queue" | "eod" | "archive" | "settings";
+type View = "today" | "timeline" | "queue" | "messages" | "eod" | "archive" | "settings";
 type ArchivedProject = {
   id: string;
   name: string;
@@ -58,6 +59,7 @@ type ClientMessage = {
   sender: string;
   content: string;
   receivedAt: string;
+  resolved?: boolean;
 };
 type QueuedMessage = { id: string; content: string; status: string };
 type Todo = {
@@ -178,13 +180,28 @@ export default function Home() {
   }, [projects]);
   const latestMessage = useMemo(() => {
     const entries = projects.flatMap((project) =>
-      (project.clientMessages ?? []).map((message) => ({
+      (project.clientMessages ?? [])
+        .filter((message) => !message.resolved)
+        .map((message) => ({
         message,
+        projectId: project.id,
         projectName: project.name,
       })),
     );
     return entries[0] ?? null;
   }, [projects]);
+
+  const allClientMessages = useMemo(
+    () =>
+      projects.flatMap((project) =>
+        (project.clientMessages ?? []).map((message) => ({
+          message,
+          projectId: project.id,
+          projectName: project.name,
+        })),
+      ),
+    [projects],
+  );
 
   const queuedMessages = useMemo(
     () =>
@@ -217,6 +234,7 @@ export default function Home() {
     today: "Today",
     timeline: "Timeline",
     queue: "Message queue",
+    messages: "Client messages",
     eod: "EOD entries",
     archive: "Archive",
     settings: "Settings",
@@ -645,6 +663,7 @@ export default function Home() {
                   sender: messageSender.trim() || project.client,
                   content,
                   receivedAt: new Date().toISOString(),
+                  resolved: false,
                 },
                 ...(project.clientMessages ?? []),
               ],
@@ -701,6 +720,70 @@ export default function Home() {
           : project,
       ),
     );
+  }
+
+  async function setClientMessageResolved(
+    projectId: string,
+    messageId: string,
+    resolved: boolean,
+  ) {
+    setProjects((current) =>
+      current.map((project) =>
+        project.id === projectId
+          ? {
+              ...project,
+              clientMessages: (project.clientMessages ?? []).map((message) =>
+                message.id === messageId ? { ...message, resolved } : message,
+              ),
+            }
+          : project,
+      ),
+    );
+
+    const response = await fetch(`/api/projects/${projectId}/messages`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "client", messageId, resolved }),
+    });
+    if (!response.ok) {
+      setProjects((current) =>
+        current.map((project) =>
+          project.id === projectId
+            ? {
+                ...project,
+                clientMessages: (project.clientMessages ?? []).map((message) =>
+                  message.id === messageId
+                    ? { ...message, resolved: !resolved }
+                    : message,
+                ),
+              }
+            : project,
+        ),
+      );
+    }
+  }
+
+  async function deleteClientMessage(projectId: string, messageId: string) {
+    const previous = projects;
+    setProjects((current) =>
+      current.map((project) =>
+        project.id === projectId
+          ? {
+              ...project,
+              clientMessages: (project.clientMessages ?? []).filter(
+                (message) => message.id !== messageId,
+              ),
+            }
+          : project,
+      ),
+    );
+
+    const response = await fetch(`/api/projects/${projectId}/messages`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "client", messageId }),
+    });
+    if (!response.ok) setProjects(previous);
   }
 
   function openTaskComposer(projectId?: string) {
@@ -783,6 +866,20 @@ export default function Home() {
               badge={queuedMessages.length ? String(queuedMessages.length) : undefined}
               active={view === "queue"}
               onClick={() => openView("queue")}
+            />
+            <SidebarItem
+              icon={<MessageSquareText size={17} />}
+              label="Client messages"
+              badge={
+                allClientMessages.filter((item) => !item.message.resolved).length
+                  ? String(
+                      allClientMessages.filter((item) => !item.message.resolved)
+                        .length,
+                    )
+                  : undefined
+              }
+              active={view === "messages"}
+              onClick={() => openView("messages")}
             />
             <SidebarItem
               icon={<FileText size={17} />}
@@ -1119,21 +1216,32 @@ export default function Home() {
                     <MessageSquareText size={15} className="text-[#7664d7]" />
                     Latest client message
                   </h2>
-                  <button className="text-[11px] font-semibold text-[#7967d2]">
+                  <button
+                    className="text-[11px] font-semibold text-[#7967d2]"
+                    onClick={() => openView("messages")}
+                  >
                     View all
                   </button>
                 </div>
                 {latestMessage ? (
-                  <div className="mt-4 rounded-xl bg-[#f7f6fb] p-4">
-                    <p className="text-[11px] font-bold">
-                      {latestMessage.message.sender}
-                    </p>
-                    <p className="text-[9px] text-[#9c9b96]">
-                      {latestMessage.projectName}
-                    </p>
-                    <p className="mt-3 whitespace-pre-wrap text-[12px] leading-5 text-[#686762]">
-                      {latestMessage.message.content}
-                    </p>
+                  <div className="mt-4">
+                    <ClientMessageCard
+                      message={latestMessage.message}
+                      projectName={latestMessage.projectName}
+                      onResolve={(resolved) =>
+                        void setClientMessageResolved(
+                          latestMessage.projectId,
+                          latestMessage.message.id,
+                          resolved,
+                        )
+                      }
+                      onDelete={() =>
+                        void deleteClientMessage(
+                          latestMessage.projectId,
+                          latestMessage.message.id,
+                        )
+                      }
+                    />
                   </div>
                 ) : (
                   <p className="mt-4 rounded-xl bg-[#f7f6fb] p-4 text-[12px] leading-5 text-[#8f8e89]">
@@ -1277,6 +1385,55 @@ export default function Home() {
                   ))
                 ) : (
                   <p className="text-sm text-[#8f8e89]">Nothing queued yet.</p>
+                )}
+              </div>
+            </section>
+          )}
+
+          {view === "messages" && (
+            <section className="rounded-2xl border border-[#e6e5e0] bg-white p-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h1 className="text-2xl font-bold tracking-[-0.04em]">
+                    Client messages
+                  </h1>
+                  <p className="mt-1 text-sm text-[#777671]">
+                    Resolve or delete requests as you handle them
+                  </p>
+                </div>
+                <button
+                  className="rounded-lg bg-[#292927] px-3 py-2 text-xs font-semibold text-white"
+                  onClick={() => openMessageComposer("client")}
+                >
+                  Save client message
+                </button>
+              </div>
+              <div className="mt-5 space-y-3">
+                {allClientMessages.length ? (
+                  allClientMessages.map((item) => (
+                    <ClientMessageCard
+                      key={item.message.id}
+                      message={item.message}
+                      projectName={item.projectName}
+                      onResolve={(resolved) =>
+                        void setClientMessageResolved(
+                          item.projectId,
+                          item.message.id,
+                          resolved,
+                        )
+                      }
+                      onDelete={() =>
+                        void deleteClientMessage(
+                          item.projectId,
+                          item.message.id,
+                        )
+                      }
+                    />
+                  ))
+                ) : (
+                  <p className="text-sm text-[#8f8e89]">
+                    No client messages yet.
+                  </p>
                 )}
               </div>
             </section>

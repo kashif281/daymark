@@ -34,15 +34,18 @@ export function PwaControls() {
       );
     });
 
-    const captureInstallPrompt = (event: Event) => {
-      event.preventDefault();
-      setInstallPrompt(event as InstallPromptEvent);
+    const captureInstallPrompt = () => {
+      if (window.__daymarkInstallPrompt) {
+        setInstallPrompt(window.__daymarkInstallPrompt);
+      }
     };
     const markInstalled = () => {
       setInstalled(true);
       setInstallPrompt(null);
+      window.__daymarkInstallPrompt = undefined;
     };
-    window.addEventListener("beforeinstallprompt", captureInstallPrompt);
+    captureInstallPrompt();
+    window.addEventListener("daymark-install-ready", captureInstallPrompt);
     window.addEventListener("appinstalled", markInstalled);
 
     if ("serviceWorker" in navigator) {
@@ -64,17 +67,24 @@ export function PwaControls() {
     }
 
     return () => {
-      window.removeEventListener("beforeinstallprompt", captureInstallPrompt);
+      window.removeEventListener("daymark-install-ready", captureInstallPrompt);
       window.removeEventListener("appinstalled", markInstalled);
     };
   }, []);
 
   async function install() {
-    if (!installPrompt) return;
-    await installPrompt.prompt();
-    const choice = await installPrompt.userChoice;
-    if (choice.outcome === "accepted") setInstalled(true);
-    setInstallPrompt(null);
+    const promptEvent = installPrompt || window.__daymarkInstallPrompt;
+    if (promptEvent) {
+      await promptEvent.prompt();
+      const choice = await promptEvent.userChoice;
+      if (choice.outcome === "accepted") setInstalled(true);
+      setInstallPrompt(null);
+      window.__daymarkInstallPrompt = undefined;
+      return;
+    }
+    setMessage(
+      "In Chrome, click the install icon in the address bar, or open the menu and choose Install Daymark / Cast, save, and share → Install page as app.",
+    );
   }
 
   async function togglePush() {
@@ -159,19 +169,17 @@ export function PwaControls() {
         Install Daymark and enable push notifications for todo reminders.
       </p>
       <div className="mt-4 space-y-2">
-        {installPrompt ? (
+        {installed ? (
+          <p className="rounded-lg bg-[#f7f6fb] px-3 py-2 text-[10px] leading-4 text-[#777671]">
+            Daymark is installed on this device.
+          </p>
+        ) : (
           <button
             className="flex w-full items-center justify-center gap-2 rounded-lg border border-[#deddd8] py-2.5 text-[11px] font-semibold hover:bg-[#f8f8f6]"
             onClick={() => void install()}
           >
             <Download size={13} /> Install Daymark
           </button>
-        ) : (
-          <p className="rounded-lg bg-[#f7f6fb] px-3 py-2 text-[10px] leading-4 text-[#777671]">
-            {installed
-              ? "Daymark is installed on this device."
-              : "On iPhone, use Share → Add to Home Screen, then enable notifications. On Android/desktop Chrome, use Install / Enable notifications."}
-          </p>
         )}
         <button
           className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#2f2e2c] py-2.5 text-[11px] font-semibold text-white disabled:opacity-50"
