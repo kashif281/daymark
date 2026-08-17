@@ -4,15 +4,34 @@ export function TrendChart({
   values,
   color = "#6d5bd0",
   label,
+  onSelect,
 }: {
   values: number[];
   color?: string;
   label: string;
+  onSelect?: (index: number) => void;
 }) {
   const width = 320;
-  const height = 92;
+  const height = 120;
   const max = Math.max(...values, 1);
-  const barWidth = values.length ? width / values.length : width;
+  const padX = 10;
+  const padY = 14;
+  const innerWidth = width - padX * 2;
+  const innerHeight = height - padY * 2;
+  const points = values.map((value, index) => {
+    const x =
+      values.length === 1
+        ? width / 2
+        : padX + (index / (values.length - 1)) * innerWidth;
+    const y = padY + innerHeight - (value / max) * innerHeight;
+    return { x, y, value };
+  });
+  const line = points.map((point) => `${point.x},${point.y}`).join(" ");
+  const area = [
+    `${padX},${height - padY}`,
+    ...points.map((point) => `${point.x},${point.y}`),
+    `${width - padX},${height - padY}`,
+  ].join(" ");
 
   return (
     <div>
@@ -25,21 +44,35 @@ export function TrendChart({
         role="img"
         aria-label={label}
       >
-        {values.map((value, index) => {
-          const barHeight = (value / max) * 76;
-          return (
-            <rect
-              key={index}
-              x={index * barWidth + 1}
-              y={height - barHeight - 4}
-              width={Math.max(barWidth - 2, 1)}
-              height={barHeight}
-              rx="1.5"
+        <polygon points={area} fill={color} opacity="0.12" />
+        <polyline
+          points={line}
+          fill="none"
+          stroke={color}
+          strokeWidth="2.2"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
+        {points.map((point, index) => (
+          <g key={index}>
+            <circle
+              cx={point.x}
+              cy={point.y}
+              r={index === points.length - 1 ? 3.4 : 2.2}
               fill={color}
-              opacity={value ? 0.9 : 0.18}
             />
-          );
-        })}
+            {onSelect ? (
+              <circle
+                cx={point.x}
+                cy={point.y}
+                r="8"
+                fill="transparent"
+                className="cursor-pointer"
+                onClick={() => onSelect(index)}
+              />
+            ) : null}
+          </g>
+        ))}
       </svg>
     </div>
   );

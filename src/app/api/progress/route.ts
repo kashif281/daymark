@@ -46,6 +46,7 @@ export async function GET() {
         hours: Math.round((entry?.hoursWorked ?? 0) * 10) / 10,
         summary: entry?.summary ?? null,
         blockers: entry?.blockers ?? null,
+        tomorrow: entry?.tomorrow ?? null,
         tasksDone: dayTasks.filter((task) => task.status === "DONE").length,
         tasksTotal: dayTasks.length,
         tasks: dayTasks.map((task) => ({
@@ -67,6 +68,12 @@ export async function GET() {
     const hoursPrevious = Math.round(sum(previous, "hours") * 10) / 10;
     const tasksRecent = sum(recent, "tasksDone");
     const tasksPrevious = sum(previous, "tasksDone");
+    const today = days[days.length - 1];
+    const yesterday = days[days.length - 2];
+    const bestDay = (items: typeof days) =>
+      [...items].sort(
+        (a, b) => b.hours - a.hours || b.tasksDone - a.tasksDone,
+      )[0] ?? null;
 
     return NextResponse.json({
       days,
@@ -77,6 +84,14 @@ export async function GET() {
         tasksPrevious,
         hoursDelta: Math.round((hoursRecent - hoursPrevious) * 10) / 10,
         tasksDelta: tasksRecent - tasksPrevious,
+        todayHours: today?.hours ?? 0,
+        yesterdayHours: yesterday?.hours ?? 0,
+        todayTasks: today?.tasksDone ?? 0,
+        yesterdayTasks: yesterday?.tasksDone ?? 0,
+        todayHoursDelta: Math.round(((today?.hours ?? 0) - (yesterday?.hours ?? 0)) * 10) / 10,
+        todayTasksDelta: (today?.tasksDone ?? 0) - (yesterday?.tasksDone ?? 0),
+        bestThisWeek: bestDay(recent),
+        bestLastWeek: bestDay(previous),
       },
     });
   } catch (error) {

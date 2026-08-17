@@ -12,6 +12,7 @@ import {
   Clock3,
   ExternalLink,
   FileText,
+  HeartPulse,
   Inbox,
   LayoutGrid,
   Menu,
@@ -34,10 +35,11 @@ import { NotificationBell } from "@/components/notification-bell";
 import { PwaControls } from "@/components/pwa-controls";
 import { ClientMessageCard } from "@/components/client-message-card";
 import { TaskActions } from "@/components/task-actions";
+import { HealthView } from "@/components/health-view";
 import { TrendChart } from "@/components/trend-chart";
 
 type Status = "todo" | "progress" | "done";
-type View = "today" | "timeline" | "queue" | "messages" | "eod" | "progress" | "archive" | "settings";
+type View = "today" | "timeline" | "queue" | "messages" | "eod" | "progress" | "health" | "archive" | "settings";
 type ArchivedProject = {
   id: string;
   name: string;
@@ -57,6 +59,7 @@ type ProgressDay = {
   hours: number;
   summary: string | null;
   blockers: string | null;
+  tomorrow: string | null;
   tasksDone: number;
   tasksTotal: number;
   tasks: {
@@ -66,6 +69,22 @@ type ProgressDay = {
     projectName: string;
     projectColor: string;
   }[];
+};
+type ProgressComparison = {
+  hoursRecent: number;
+  hoursPrevious: number;
+  tasksRecent: number;
+  tasksPrevious: number;
+  hoursDelta: number;
+  tasksDelta: number;
+  todayHours: number;
+  yesterdayHours: number;
+  todayTasks: number;
+  yesterdayTasks: number;
+  todayHoursDelta: number;
+  todayTasksDelta: number;
+  bestThisWeek: ProgressDay | null;
+  bestLastWeek: ProgressDay | null;
 };
 type Task = {
   id: string;
@@ -169,14 +188,25 @@ export default function Home() {
   const [newTodo, setNewTodo] = useState("");
   const [newTodoReminder, setNewTodoReminder] = useState("");
   const [progressDays, setProgressDays] = useState<ProgressDay[]>([]);
-  const [progressComparison, setProgressComparison] = useState({
+  const [progressComparison, setProgressComparison] = useState<ProgressComparison>({
     hoursRecent: 0,
     hoursPrevious: 0,
     tasksRecent: 0,
     tasksPrevious: 0,
     hoursDelta: 0,
     tasksDelta: 0,
+    todayHours: 0,
+    yesterdayHours: 0,
+    todayTasks: 0,
+    yesterdayTasks: 0,
+    todayHoursDelta: 0,
+    todayTasksDelta: 0,
+    bestThisWeek: null,
+    bestLastWeek: null,
   });
+  const [progressDetail, setProgressDetail] = useState<
+    "today" | "week" | ProgressDay | null
+  >(null);
   const [user, setUser] = useState({ name: "", email: "" });
 
   useEffect(() => {
@@ -254,6 +284,7 @@ export default function Home() {
     messages: "Client messages",
     eod: "EOD entries",
     progress: "Progress",
+    health: "Health",
     archive: "Archive",
     settings: "Settings",
   };
@@ -511,7 +542,7 @@ export default function Home() {
     if (!response.ok) return;
     const data = (await response.json()) as {
       days: ProgressDay[];
-      comparison: typeof progressComparison;
+      comparison: ProgressComparison;
     };
     setProgressDays(data.days);
     setProgressComparison(data.comparison);
@@ -915,6 +946,12 @@ export default function Home() {
               label="Progress"
               active={view === "progress"}
               onClick={() => openView("progress")}
+            />
+            <SidebarItem
+              icon={<HeartPulse size={17} />}
+              label="Health"
+              active={view === "health"}
+              onClick={() => openView("health")}
             />
             <SidebarItem
               icon={<Inbox size={17} />}
@@ -1607,7 +1644,7 @@ export default function Home() {
                     Progress
                   </h1>
                   <p className="mt-1 text-sm text-[#777671]">
-                    30-day hours, completed work, and week-over-week change
+                    Line trends for 30 days. Tap a card for the full breakdown.
                   </p>
                 </div>
                 <button
@@ -1618,88 +1655,111 @@ export default function Home() {
                 </button>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl border border-[#e6e5e0] bg-white p-4">
+                <button
+                  className="rounded-2xl border border-[#e6e5e0] bg-white p-4 text-left hover:border-[#d4d0f0]"
+                  onClick={() => setProgressDetail("today")}
+                >
                   <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#9a9994]">
-                    Hours this week
+                    Today vs yesterday
+                  </p>
+                  <p className="mt-2 text-2xl font-bold">
+                    {progressComparison.todayHours}
+                    <span className="ml-1 text-sm font-semibold text-[#8f8e89]">h today</span>
+                  </p>
+                  <p className={`mt-1 text-[12px] font-semibold ${trendClass(progressComparison.todayHoursDelta)}`}>
+                    {trendLabel(
+                      progressComparison.todayHoursDelta,
+                      "h",
+                      "yesterday",
+                    )}
+                  </p>
+                  <p className={`mt-1 text-[11px] ${trendClass(progressComparison.todayTasksDelta)}`}>
+                    {progressComparison.todayTasks} tasks done ·{" "}
+                    {trendLabel(
+                      progressComparison.todayTasksDelta,
+                      " tasks",
+                      "yesterday",
+                    )}
+                  </p>
+                </button>
+                <button
+                  className="rounded-2xl border border-[#e6e5e0] bg-white p-4 text-left hover:border-[#d4d0f0]"
+                  onClick={() => setProgressDetail("week")}
+                >
+                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#9a9994]">
+                    This week vs last week
                   </p>
                   <p className="mt-2 text-2xl font-bold">
                     {progressComparison.hoursRecent}
                     <span className="ml-1 text-sm font-semibold text-[#8f8e89]">h</span>
                   </p>
-                  <p
-                    className={`mt-1 text-[12px] font-semibold ${
-                      progressComparison.hoursDelta > 0
-                        ? "text-[#367653]"
-                        : progressComparison.hoursDelta < 0
-                          ? "text-[#a7463d]"
-                          : "text-[#8f8e89]"
-                    }`}
-                  >
-                    {progressComparison.hoursDelta > 0
-                      ? `Up ${progressComparison.hoursDelta}h vs last week`
-                      : progressComparison.hoursDelta < 0
-                        ? `Down ${Math.abs(progressComparison.hoursDelta)}h vs last week`
-                        : "Same hours as last week"}
+                  <p className={`mt-1 text-[12px] font-semibold ${trendClass(progressComparison.hoursDelta)}`}>
+                    {trendLabel(progressComparison.hoursDelta, "h", "last week")}
                   </p>
-                </div>
-                <div className="rounded-2xl border border-[#e6e5e0] bg-white p-4">
-                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#9a9994]">
-                    Tasks done this week
+                  <p className={`mt-1 text-[11px] ${trendClass(progressComparison.tasksDelta)}`}>
+                    {progressComparison.tasksRecent} tasks done ·{" "}
+                    {trendLabel(progressComparison.tasksDelta, " tasks", "last week")}
                   </p>
-                  <p className="mt-2 text-2xl font-bold">
-                    {progressComparison.tasksRecent}
+                  <p className="mt-2 text-[11px] leading-4 text-[#5f5e5a]">
+                    Best this week: {formatProgressDate(progressComparison.bestThisWeek?.date)} ·{" "}
+                    {progressComparison.bestThisWeek?.hours ?? 0}h ·{" "}
+                    {progressComparison.bestThisWeek?.tasksDone ?? 0} tasks
                   </p>
-                  <p
-                    className={`mt-1 text-[12px] font-semibold ${
-                      progressComparison.tasksDelta > 0
-                        ? "text-[#367653]"
-                        : progressComparison.tasksDelta < 0
-                          ? "text-[#a7463d]"
-                          : "text-[#8f8e89]"
-                    }`}
-                  >
-                    {progressComparison.tasksDelta > 0
-                      ? `Up ${progressComparison.tasksDelta} vs last week`
-                      : progressComparison.tasksDelta < 0
-                        ? `Down ${Math.abs(progressComparison.tasksDelta)} vs last week`
-                        : "Same completed tasks as last week"}
+                  <p className="mt-1 text-[11px] leading-4 text-[#8f8e89]">
+                    Best last week: {formatProgressDate(progressComparison.bestLastWeek?.date)} ·{" "}
+                    {progressComparison.bestLastWeek?.hours ?? 0}h ·{" "}
+                    {progressComparison.bestLastWeek?.tasksDone ?? 0} tasks
                   </p>
-                </div>
+                </button>
               </div>
               <div className="grid gap-4 rounded-2xl border border-[#e6e5e0] bg-white p-5 lg:grid-cols-2">
                 <TrendChart
                   label="Hours worked"
                   color="#6d5bd0"
                   values={progressDays.map((day) => day.hours)}
+                  onSelect={(index) => setProgressDetail(progressDays[index] ?? null)}
                 />
                 <TrendChart
                   label="Tasks completed"
                   color="#4c9a70"
                   values={progressDays.map((day) => day.tasksDone)}
+                  onSelect={(index) => setProgressDetail(progressDays[index] ?? null)}
                 />
               </div>
               <div className="rounded-2xl border border-[#e6e5e0] bg-white p-5">
                 <h2 className="text-[13px] font-bold">Daily log</h2>
                 <div className="mt-4 space-y-3">
-                  {[...progressDays].reverse().map((day) => (
-                    <div
+                  {[...progressDays]
+                    .map((day, index) => ({
+                      day,
+                      previous: index > 0 ? progressDays[index - 1] : null,
+                    }))
+                    .reverse()
+                    .map(({ day, previous }) => {
+                      const hoursDelta = previous
+                        ? Math.round((day.hours - previous.hours) * 10) / 10
+                        : 0;
+                      return (
+                    <button
                       key={day.date}
-                      className="rounded-xl border border-[#ecebe7] p-3"
+                      className="w-full rounded-xl border border-[#ecebe7] p-3 text-left hover:border-[#d4d0f0]"
+                      onClick={() => setProgressDetail(day)}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-[12px] font-bold">
-                          {new Intl.DateTimeFormat(undefined, {
-                            weekday: "short",
-                            month: "short",
-                            day: "numeric",
-                          }).format(new Date(day.date))}
+                          {formatProgressDate(day.date, true)}
                         </p>
                         <p className="text-[11px] text-[#8f8e89]">
                           {day.hours}h · {day.tasksDone}/{day.tasksTotal} tasks
                         </p>
                       </div>
+                      {previous ? (
+                        <p className={`mt-1 text-[11px] font-semibold ${trendClass(hoursDelta)}`}>
+                          {trendLabel(hoursDelta, "h", "the day before")}
+                        </p>
+                      ) : null}
                       {day.summary ? (
-                        <p className="mt-2 text-[12px] leading-5 text-[#565550]">
+                        <p className="mt-2 line-clamp-2 text-[12px] leading-5 text-[#565550]">
                           {day.summary}
                         </p>
                       ) : (
@@ -1707,12 +1767,15 @@ export default function Home() {
                           No EOD logged
                         </p>
                       )}
-                    </div>
-                  ))}
+                    </button>
+                      );
+                    })}
                 </div>
               </div>
             </section>
           )}
+
+          {view === "health" && <HealthView />}
 
           {view === "archive" && (
             <section className="rounded-2xl border border-[#e6e5e0] bg-white p-5">
@@ -2114,6 +2177,14 @@ export default function Home() {
           }}
         />
       ) : null}
+      {progressDetail ? (
+        <ProgressDetailModal
+          detail={progressDetail}
+          days={progressDays}
+          comparison={progressComparison}
+          onClose={() => setProgressDetail(null)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -2190,6 +2261,228 @@ function QueueItem({
       <p className="mt-1.5 flex items-center gap-1 text-[9px] uppercase text-[#aaa9a4]">
         <Clock3 size={9} /> {status}
       </p>
+    </div>
+  );
+}
+
+function formatProgressDate(date?: string, weekday = false) {
+  if (!date) return "—";
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: weekday ? "short" : undefined,
+    month: "short",
+    day: "numeric",
+  }).format(new Date(date));
+}
+
+function trendClass(delta: number) {
+  if (delta > 0) return "text-[#367653]";
+  if (delta < 0) return "text-[#a7463d]";
+  return "text-[#8f8e89]";
+}
+
+function trendLabel(delta: number, unit: string, comparedTo: string) {
+  if (delta > 0) return `Better by ${delta}${unit} than ${comparedTo}`;
+  if (delta < 0) return `Worse by ${Math.abs(delta)}${unit} than ${comparedTo}`;
+  return `Same as ${comparedTo}`;
+}
+
+function ProgressDayBody({ day }: { day: ProgressDay }) {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[13px] font-bold">{formatProgressDate(day.date, true)}</p>
+        <p className="text-[12px] text-[#6e6d68]">
+          {day.hours}h · {day.tasksDone}/{day.tasksTotal} tasks
+        </p>
+      </div>
+      <div>
+        <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#9a9994]">
+          Summary
+        </p>
+        <p className="mt-1 whitespace-pre-wrap text-[13px] leading-5 text-[#3f3e3a]">
+          {day.summary || "No EOD logged"}
+        </p>
+      </div>
+      {day.blockers ? (
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#9a9994]">
+            Blockers
+          </p>
+          <p className="mt-1 whitespace-pre-wrap text-[13px] leading-5 text-[#3f3e3a]">
+            {day.blockers}
+          </p>
+        </div>
+      ) : null}
+      {day.tomorrow ? (
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#9a9994]">
+            Tomorrow
+          </p>
+          <p className="mt-1 whitespace-pre-wrap text-[13px] leading-5 text-[#3f3e3a]">
+            {day.tomorrow}
+          </p>
+        </div>
+      ) : null}
+      <div>
+        <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#9a9994]">
+          Tasks
+        </p>
+        {day.tasks.length ? (
+          <div className="mt-2 space-y-2">
+            {day.tasks.map((task) => (
+              <div
+                key={task.id}
+                className="flex items-start justify-between gap-2 rounded-lg border border-[#ecebe7] px-3 py-2"
+              >
+                <div>
+                  <p className="text-[12px] font-medium text-[#3f3e3a]">{task.title}</p>
+                  <p className="mt-0.5 text-[10px] text-[#8f8e89]">{task.projectName}</p>
+                </div>
+                <span
+                  className="shrink-0 text-[10px] font-semibold uppercase tracking-wider"
+                  style={{ color: task.projectColor }}
+                >
+                  {task.status}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-1 text-[12px] text-[#8f8e89]">No tasks this day</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ProgressDetailModal({
+  detail,
+  days,
+  comparison,
+  onClose,
+}: {
+  detail: "today" | "week" | ProgressDay;
+  days: ProgressDay[];
+  comparison: ProgressComparison;
+  onClose: () => void;
+}) {
+  const today = days[days.length - 1];
+  const yesterday = days[days.length - 2];
+  const thisWeek = days.slice(-7);
+  const lastWeek = days.slice(-14, -7);
+  const title =
+    detail === "today"
+      ? "Today vs yesterday"
+      : detail === "week"
+        ? "This week vs last week"
+        : formatProgressDate(detail.date, true);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/35 p-4 backdrop-blur-[2px]"
+      onClick={onClose}
+    >
+      <div
+        className="max-h-[min(42rem,calc(100dvh-2rem))] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold">{title}</h2>
+            {detail === "today" ? (
+              <p className={`mt-1 text-xs font-semibold ${trendClass(comparison.todayHoursDelta)}`}>
+                {trendLabel(comparison.todayHoursDelta, "h", "yesterday")} ·{" "}
+                {trendLabel(comparison.todayTasksDelta, " tasks", "yesterday")}
+              </p>
+            ) : null}
+            {detail === "week" ? (
+              <p className={`mt-1 text-xs font-semibold ${trendClass(comparison.hoursDelta)}`}>
+                {trendLabel(comparison.hoursDelta, "h", "last week")} ·{" "}
+                {trendLabel(comparison.tasksDelta, " tasks", "last week")}
+              </p>
+            ) : null}
+          </div>
+          <button
+            className="rounded-lg p-1 text-[#8f8e89] hover:bg-[#f3f3f0]"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <div className="mt-4 space-y-5">
+          {detail === "today" ? (
+            <>
+              {today ? <ProgressDayBody day={today} /> : null}
+              {yesterday ? (
+                <div className="border-t border-[#ecebe7] pt-4">
+                  <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-[#9a9994]">
+                    Yesterday
+                  </p>
+                  <ProgressDayBody day={yesterday} />
+                </div>
+              ) : null}
+            </>
+          ) : null}
+          {detail === "week" ? (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl border border-[#ecebe7] p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#9a9994]">
+                    This week
+                  </p>
+                  <p className="mt-1 text-xl font-bold">{comparison.hoursRecent}h</p>
+                  <p className="text-[12px] text-[#6e6d68]">{comparison.tasksRecent} tasks done</p>
+                </div>
+                <div className="rounded-xl border border-[#ecebe7] p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#9a9994]">
+                    Last week
+                  </p>
+                  <p className="mt-1 text-xl font-bold">{comparison.hoursPrevious}h</p>
+                  <p className="text-[12px] text-[#6e6d68]">{comparison.tasksPrevious} tasks done</p>
+                </div>
+              </div>
+              {comparison.bestThisWeek ? (
+                <div>
+                  <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-[#9a9994]">
+                    Best day this week
+                  </p>
+                  <ProgressDayBody day={comparison.bestThisWeek} />
+                </div>
+              ) : null}
+              {comparison.bestLastWeek ? (
+                <div className="border-t border-[#ecebe7] pt-4">
+                  <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-[#9a9994]">
+                    Best day last week
+                  </p>
+                  <ProgressDayBody day={comparison.bestLastWeek} />
+                </div>
+              ) : null}
+              <div className="border-t border-[#ecebe7] pt-4">
+                <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-[#9a9994]">
+                  This week day by day
+                </p>
+                <div className="space-y-4">
+                  {[...thisWeek].reverse().map((day) => (
+                    <ProgressDayBody key={day.date} day={day} />
+                  ))}
+                </div>
+              </div>
+              <div className="border-t border-[#ecebe7] pt-4">
+                <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-[#9a9994]">
+                  Last week day by day
+                </p>
+                <div className="space-y-4">
+                  {[...lastWeek].reverse().map((day) => (
+                    <ProgressDayBody key={day.date} day={day} />
+                  ))}
+                </div>
+              </div>
+            </>
+          ) : null}
+          {typeof detail === "object" ? <ProgressDayBody day={detail} /> : null}
+        </div>
+      </div>
     </div>
   );
 }

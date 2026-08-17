@@ -9,7 +9,8 @@
     "lint": "eslint",
     "reminders": "node scripts/run-reminders.mjs",
     "reminders:watch": "node scripts/reminder-worker.mjs",
-    "push:keys": "node scripts/generate-vapid.mjs"
+    "push:keys": "node scripts/generate-vapid.mjs",
+    "db:seed": "node scripts/seed-progress.mjs"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.7.6",

@@ -30,6 +30,16 @@ enum MessageStatus {
   SENT
 }
 
+enum HealthRoutineKind {
+  WALK
+  EXERCISE
+  DIET
+  SLEEP
+  WATER
+  MEDITATION
+  OTHER
+}
+
 model User {
   id                String             @id
   email             String             @unique
@@ -39,9 +49,15 @@ model User {
   todos             Todo[]
   queuedMessages    QueuedMessage[]
   pushSubscriptions PushSubscription[]
-  eodEntries        EodEntry[]
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
+  eodEntries          EodEntry[]
+  healthRoutines      HealthRoutine[]
+  healthLogs          HealthLog[]
+  healthPrescriptions HealthPrescription[]
+  healthCheckIns      HealthCheckIn[]
+  healthSymptoms      HealthSymptom[]
+  healthMedications   HealthMedication[]
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
 }
 
 model Todo {
@@ -169,6 +185,129 @@ model EodEntry {
   updatedAt   DateTime @updatedAt
 
   @@unique([userId, entryDate])
+}
+
+model HealthRoutine {
+  id        String             @id @default(cuid())
+  userId    String
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      HealthRoutineKind
+  title     String
+  target    String?
+  archived  Boolean            @default(false)
+  logs      HealthLog[]
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  @@index([userId, archived])
+}
+
+model HealthLog {
+  id        String         @id @default(cuid())
+  userId    String
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  routineId String
+  routine   HealthRoutine  @relation(fields: [routineId], references: [id], onDelete: Cascade)
+  logDate   DateTime       @db.Date
+  completed Boolean        @default(true)
+  amount    String?
+  notes     String?
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@unique([routineId, logDate])
+  @@index([userId, logDate])
+}
+
+model HealthPrescription {
+  id          String                @id @default(cuid())
+  userId      String
+  user        User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  doctorName  String?
+  visitDate   DateTime              @db.Date
+  advice      String
+  medications String?
+  nextVisitAt DateTime?             @db.Date
+  updates     HealthProgressNote[]
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  @@index([userId, visitDate])
+}
+
+model HealthProgressNote {
+  id             String             @id @default(cuid())
+  prescriptionId String
+  prescription   HealthPrescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  noteDate       DateTime           @db.Date
+  improving      String
+  stillIssue     String?
+  createdAt      DateTime           @default(now())
+
+  @@index([prescriptionId, noteDate])
+}
+
+model HealthCheckIn {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  logDate      DateTime @db.Date
+  sleepHours   Float?
+  sleepQuality Int?
+  waterGlasses Int      @default(0)
+  mood         Int?
+  energy       Int?
+  weightKg     Float?
+  systolic     Int?
+  diastolic    Int?
+  heartRate    Int?
+  bloodSugar   Float?
+  temperature  Float?
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, logDate])
+}
+
+model HealthSymptom {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  logDate   DateTime @db.Date
+  name      String
+  severity  Int
+  notes     String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, logDate])
+}
+
+model HealthMedication {
+  id        String                 @id @default(cuid())
+  userId    String
+  user      User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  dose      String?
+  schedule  String?
+  active    Boolean                @default(true)
+  logs      HealthMedicationLog[]
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+
+  @@index([userId, active])
+}
+
+model HealthMedicationLog {
+  id            String           @id @default(cuid())
+  medicationId  String
+  medication    HealthMedication @relation(fields: [medicationId], references: [id], onDelete: Cascade)
+  logDate       DateTime         @db.Date
+  taken         Boolean          @default(true)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@unique([medicationId, logDate])
 }
 
 model ProjectEodEntry {
