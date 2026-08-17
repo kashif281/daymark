@@ -2,6 +2,7 @@
 
 import { Download, Share, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 const DISMISS_KEY = "daymark-hide-install-banner";
 
@@ -79,9 +80,9 @@ export function IosInstallHelp({
   kind: "safari" | "other";
   onClose: () => void;
 }) {
-  return (
-    <div className="fixed inset-0 z-[70] grid place-items-end bg-black/40 p-4 sm:place-items-center">
-      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+  const overlay = (
+    <div className="fixed inset-0 z-[70] grid place-items-center bg-black/40 p-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]">
+      <div className="max-h-[min(36rem,calc(100dvh-2rem))] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl">
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-base font-bold">Install Daymark</h2>
@@ -137,6 +138,9 @@ export function IosInstallHelp({
       </div>
     </div>
   );
+
+  if (typeof document === "undefined") return overlay;
+  return createPortal(overlay, document.body);
 }
 
 export function PwaInstallHeaderButton() {
