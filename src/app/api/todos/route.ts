@@ -110,14 +110,25 @@ export async function PATCH(request: Request) {
 export async function DELETE(request: Request) {
   try {
     const user = await requireAppUser();
-    const body = (await request.json()) as { id?: string };
+    const url = new URL(request.url);
+    const body = (await request.json().catch(() => ({}))) as { id?: string };
+    const id = url.searchParams.get("id") || body.id;
+    const clearCompleted = url.searchParams.get("completed") === "true";
+    const db = getDb();
 
-    if (!body.id) {
+    if (clearCompleted) {
+      await db.todo.deleteMany({
+        where: { userId: user.id, completed: true },
+      });
+      return new NextResponse(null, { status: 204 });
+    }
+
+    if (!id) {
       return NextResponse.json({ error: "Todo is required." }, { status: 400 });
     }
 
-    const deleted = await getDb().todo.deleteMany({
-      where: { id: body.id, userId: user.id },
+    const deleted = await db.todo.deleteMany({
+      where: { id, userId: user.id },
     });
     if (!deleted.count) {
       return NextResponse.json({ error: "Todo not found." }, { status: 404 });

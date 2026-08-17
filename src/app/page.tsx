@@ -627,10 +627,17 @@ export default function Home() {
   async function deleteTodo(id: string) {
     const previous = todos;
     setTodos((current) => current.filter((todo) => todo.id !== id));
-    const response = await fetch("/api/todos", {
+    const response = await fetch(`/api/todos?id=${encodeURIComponent(id)}`, {
       method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
+    });
+    if (!response.ok) setTodos(previous);
+  }
+
+  async function clearCompletedTodos() {
+    const previous = todos;
+    setTodos((current) => current.filter((todo) => !todo.completed));
+    const response = await fetch("/api/todos?completed=true", {
+      method: "DELETE",
     });
     if (!response.ok) setTodos(previous);
   }
@@ -1138,20 +1145,30 @@ export default function Home() {
                     <Check size={15} className="text-[#4c9a70]" />
                     Personal todos
                   </h2>
-                  <button
-                    aria-label="Add todo"
-                    className="rounded-lg p-1.5 text-[#777771] hover:bg-[#f3f3f0]"
-                    onClick={() => setTodoComposerOpen(true)}
-                  >
-                    <Plus size={15} />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    {todos.some((todo) => todo.completed) ? (
+                      <button
+                        className="rounded-lg px-2 py-1 text-[10px] font-semibold text-[#8a8984] hover:bg-[#f3f3f0] hover:text-[#c45d5d]"
+                        onClick={() => void clearCompletedTodos()}
+                      >
+                        Clear done
+                      </button>
+                    ) : null}
+                    <button
+                      aria-label="Add todo"
+                      className="rounded-lg p-1.5 text-[#777771] hover:bg-[#f3f3f0]"
+                      onClick={() => setTodoComposerOpen(true)}
+                    >
+                      <Plus size={15} />
+                    </button>
+                  </div>
                 </div>
                 <div className="mt-4 space-y-2">
                   {todos.length ? (
                     todos.map((todo) => (
                       <div
                         key={todo.id}
-                        className="group flex items-start gap-2 rounded-xl border border-[#ecebe7] p-3"
+                        className="flex items-start gap-2 rounded-xl border border-[#ecebe7] p-3"
                       >
                         <button
                           aria-label={
@@ -1192,10 +1209,10 @@ export default function Home() {
                         </div>
                         <button
                           aria-label="Delete todo"
-                          className="p-1 text-[#aaa9a4] opacity-0 hover:text-[#c45d5d] group-hover:opacity-100"
+                          className="shrink-0 rounded-lg p-2 text-[#aaa9a4] hover:bg-[#fff0ee] hover:text-[#c45d5d]"
                           onClick={() => void deleteTodo(todo.id)}
                         >
-                          <Trash2 size={12} />
+                          <Trash2 size={14} />
                         </button>
                       </div>
                     ))
