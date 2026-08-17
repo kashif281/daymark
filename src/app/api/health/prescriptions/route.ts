@@ -92,11 +92,16 @@ export async function PATCH(request: Request) {
       data: {
         doctorName:
           body.doctorName === undefined ? undefined : body.doctorName?.trim() || null,
-        visitDate,
+        visitDate: visitDate ?? undefined,
         advice: body.advice?.trim() || undefined,
         medications:
           body.medications === undefined ? undefined : body.medications?.trim() || null,
-        nextVisitAt,
+        nextVisitAt:
+          nextVisitAt === undefined
+            ? undefined
+            : nextVisitAt === null
+              ? { set: null }
+              : nextVisitAt,
       },
     });
 
