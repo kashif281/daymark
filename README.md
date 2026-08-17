@@ -23,7 +23,17 @@ Open [http://localhost:3000](http://localhost:3000). Clerk protects application 
 
 The dashboard requires Clerk and PostgreSQL configuration. It does not display sample account data when these services are missing.
 
+## Production
+
+The app is deployed at [https://daymark-rho.vercel.app](https://daymark-rho.vercel.app).
+
+Vercel hosts the Next.js UI and APIs. Prisma Postgres stores data. GitHub Actions calls `/api/cron/reminders` every 5 minutes.
+
+Add `https://daymark-rho.vercel.app` in the Clerk dashboard under allowed origins / redirect URLs. Claim the Prisma Postgres database from the claim URL so it is not deleted after 24 hours.
+
 ## Railway deployment
+
+Railway can also host the app if the workspace can provision a new project:
 
 1. Add this repository as a Railway service.
 2. Add a PostgreSQL service to the same project.
@@ -33,9 +43,9 @@ The dashboard requires Clerk and PostgreSQL configuration. It does not display s
 
 ### Todo push reminders
 
-1. Run `npm run push:keys` once and copy the VAPID variables to Railway.
+1. Run `npm run push:keys` once and copy the VAPID variables to the host.
 2. Set the VAPID variables, `CRON_SECRET`, and the public `APP_URL`.
-3. Add a Railway worker service from the same repository with `npm run reminders:watch` as its start command. It checks every 30 seconds by default.
+3. On Railway, add a worker service with `npm run reminders:watch`. On Vercel, the GitHub Actions workflow covers this.
 4. In the app, click **Enable notifications** (on iPhone, install via Share → Add to Home Screen first).
 
 Email reminders via Resend remain optional and are disabled unless `REMINDER_EMAIL_ENABLED=true` and a verified Resend domain are configured.
