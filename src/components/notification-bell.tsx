@@ -1,7 +1,7 @@
 "use client";
 
-import { Bell, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Bell, Check, X } from "lucide-react";
+import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePwaInstall } from "@/components/pwa-install-prompt";
 import { usePushNotifications } from "@/components/use-push-notifications";
@@ -16,26 +16,18 @@ type ReminderTodo = {
 
 export function NotificationBell({
   todos,
-  openSignal = 0,
+  onResolve,
 }: {
   todos: ReminderTodo[];
-  openSignal?: number;
+  onResolve?: (todo: ReminderTodo) => void;
 }) {
   const [open, setOpen] = useState(false);
   const push = usePushNotifications();
   const { install, iosKind } = usePwaInstall();
   const upcoming = useMemo(
-    () =>
-      todos.filter(
-        (todo) => todo.reminderAt && !todo.completed,
-      ),
+    () => todos.filter((todo) => todo.reminderAt && !todo.completed),
     [todos],
   );
-
-  useEffect(() => {
-    if (!openSignal) return;
-    queueMicrotask(() => setOpen(true));
-  }, [openSignal]);
 
   const badgeCount = upcoming.length;
   const needsAttention = !push.subscribed;
@@ -55,7 +47,7 @@ export function NotificationBell({
                 <div>
                   <h2 className="text-base font-bold">Notifications</h2>
                   <p className="mt-1 text-xs text-[#8c8b86]">
-                    Enable alerts so reminder todos reach this phone.
+                    Reminder todos waiting on this phone.
                   </p>
                 </div>
                 <button
@@ -68,48 +60,35 @@ export function NotificationBell({
                 </button>
               </div>
 
-              <div className="mt-4 space-y-2">
-                {push.blockReason === "ios-chrome" ||
-                push.blockReason === "ios-install" ? (
-                  <button
-                    className="flex w-full items-center justify-center rounded-lg bg-[#6d5bd0] py-2.5 text-[12px] font-semibold text-white"
-                    type="button"
-                    onClick={() => void install()}
-                  >
-                    {iosKind === "other"
-                      ? "Open in Safari to install"
-                      : "Install Daymark first"}
-                  </button>
-                ) : (
-                  <button
-                    className="flex w-full items-center justify-center rounded-lg bg-[#2f2e2c] py-2.5 text-[12px] font-semibold text-white disabled:opacity-50"
-                    disabled={push.busy}
-                    type="button"
-                    onClick={() =>
-                      void (push.subscribed ? push.disable() : push.enable())
-                    }
-                  >
-                    {push.subscribed
-                      ? "Disable notifications"
-                      : "Enable notifications"}
-                  </button>
-                )}
-                {push.subscribed ? (
-                  <button
-                    className="flex w-full items-center justify-center rounded-lg border border-[#deddd8] py-2.5 text-[12px] font-semibold disabled:opacity-50"
-                    disabled={push.busy}
-                    type="button"
-                    onClick={() => void push.sendTest()}
-                  >
-                    Send test notification
-                  </button>
-                ) : null}
-              </div>
-
-              {push.message ? (
-                <p className="mt-3 text-[11px] leading-5 text-[#777671]">
-                  {push.message}
-                </p>
+              {!push.subscribed ? (
+                <div className="mt-4">
+                  {push.blockReason === "ios-chrome" ||
+                  push.blockReason === "ios-install" ? (
+                    <button
+                      className="flex w-full items-center justify-center rounded-lg bg-[#6d5bd0] py-2.5 text-[12px] font-semibold text-white"
+                      type="button"
+                      onClick={() => void install()}
+                    >
+                      {iosKind === "other"
+                        ? "Open in Safari to install"
+                        : "Install Daymark first"}
+                    </button>
+                  ) : (
+                    <button
+                      className="flex w-full items-center justify-center rounded-lg bg-[#2f2e2c] py-2.5 text-[12px] font-semibold text-white disabled:opacity-50"
+                      disabled={push.busy}
+                      type="button"
+                      onClick={() => void push.enable()}
+                    >
+                      Enable notifications
+                    </button>
+                  )}
+                  {push.message ? (
+                    <p className="mt-3 text-[11px] leading-5 text-[#777671]">
+                      {push.message}
+                    </p>
+                  ) : null}
+                </div>
               ) : null}
 
               <div className="mt-5">
@@ -134,11 +113,20 @@ export function NotificationBell({
                                 minute: "2-digit",
                               }).format(new Date(todo.reminderAt!))}
                         </p>
+                        {onResolve ? (
+                          <button
+                            className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-[#367653]"
+                            type="button"
+                            onClick={() => onResolve(todo)}
+                          >
+                            <Check size={12} /> Mark resolved
+                          </button>
+                        ) : null}
                       </div>
                     ))
                   ) : (
                     <p className="text-[12px] leading-5 text-[#8f8e89]">
-                      No timed todos yet. Add a personal todo with a reminder.
+                      No timed todos yet.
                     </p>
                   )}
                 </div>

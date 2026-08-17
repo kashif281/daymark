@@ -622,10 +622,18 @@ export default function ProjectPage({
             </section>
 
             <section className="rounded-2xl border border-[#e6e5e0] bg-white p-5">
-              <h2 className="flex items-center gap-2 text-sm font-bold">
-                <Send size={15} className="text-[#df9145]" />
-                Message queue
-              </h2>
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="flex min-w-0 items-center gap-2 text-sm font-bold">
+                  <Send size={15} className="shrink-0 text-[#df9145]" />
+                  Message queue
+                </h2>
+                <button
+                  className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[#2f2e2c] px-2 py-1 text-[11px] font-semibold text-white hover:bg-black"
+                  onClick={() => setMessageComposer("queued")}
+                >
+                  <Plus size={12} /> Queue
+                </button>
+              </div>
               {queued.length ? (
                 queued.map((message) => (
                   <div
@@ -654,29 +662,25 @@ export default function ProjectPage({
                   Draft your next client update and keep it ready to send.
                 </p>
               )}
-              <button
-                className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-[#2f2e2c] py-2.5 text-xs font-semibold text-white hover:bg-black"
-                onClick={() => setMessageComposer("queued")}
-              >
-                <Plus size={13} /> Queue a message
-              </button>
             </section>
 
             <section className="rounded-2xl bg-[#2f2e2c] p-5 text-white">
-              <h2 className="flex items-center gap-2 text-sm font-bold">
-                <FileText size={15} className="text-[#c5b9ff]" />
-                Project EOD
-              </h2>
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="flex items-center gap-2 text-sm font-bold">
+                  <FileText size={15} className="text-[#c5b9ff]" />
+                  Project EOD
+                </h2>
+                <button
+                  className="rounded-lg bg-white px-2 py-1 text-[11px] font-bold text-[#343331]"
+                  onClick={() => setEodOpen(true)}
+                >
+                  Write
+                </button>
+              </div>
               <p className="mt-3 text-xs leading-5 text-white/60">
                 Record what moved forward, blockers, and tomorrow&apos;s plan for
                 this project.
               </p>
-              <button
-                className="mt-4 w-full rounded-lg bg-white py-2.5 text-xs font-bold text-[#343331]"
-                onClick={() => setEodOpen(true)}
-              >
-                Write project EOD
-              </button>
             </section>
           </div>
         </div>

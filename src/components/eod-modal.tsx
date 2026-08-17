@@ -15,28 +15,33 @@ export function EodModal({
   const [summary, setSummary] = useState("");
   const [blockers, setBlockers] = useState("");
   const [tomorrow, setTomorrow] = useState("");
+  const [hoursWorked, setHoursWorked] = useState("");
   const [saving, setSaving] = useState(false);
 
   async function save() {
     if (!summary.trim()) return;
     setSaving(true);
-    const entry = { summary, blockers, tomorrow, projectId };
-
-      const response = await fetch("/api/eod", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(entry),
-      });
-      if (!response.ok) {
-        setSaving(false);
-        return;
+    const response = await fetch("/api/eod", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        summary,
+        blockers,
+        tomorrow,
+        projectId,
+        hoursWorked: hoursWorked || 0,
+      }),
+    });
+    if (!response.ok) {
+      setSaving(false);
+      return;
     }
     onClose();
   }
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/35 p-4 backdrop-blur-[2px]">
-      <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl">
+      <div className="max-h-[min(40rem,calc(100dvh-2rem))] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl">
         <div className="flex items-start justify-between">
           <div>
             <h2 className="text-lg font-bold">
@@ -45,7 +50,7 @@ export function EodModal({
             <p className="mt-1 text-xs text-[#888782]">
               {projectName
                 ? "Wrap up this project for today."
-                : "Summarize your full day across every project."}
+                : "Summarize your full day and log hours worked."}
             </p>
           </div>
           <button
@@ -56,6 +61,24 @@ export function EodModal({
             <X size={17} />
           </button>
         </div>
+        {!projectId ? (
+          <>
+            <label className="mt-5 block text-xs font-bold text-[#62615d]">
+              Hours worked
+            </label>
+            <input
+              className="mt-2 w-full rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none focus:border-[#8a79dc]"
+              inputMode="decimal"
+              min="0"
+              max="24"
+              step="0.5"
+              type="number"
+              placeholder="e.g. 7.5"
+              value={hoursWorked}
+              onChange={(event) => setHoursWorked(event.target.value)}
+            />
+          </>
+        ) : null}
         <label className="mt-5 block text-xs font-bold text-[#62615d]">
           What did you complete?
         </label>

@@ -23,6 +23,7 @@ export async function GET() {
         summary: entry.summary,
         blockers: entry.blockers,
         tomorrow: entry.tomorrow,
+        hoursWorked: entry.hoursWorked,
       })),
     });
   } catch (error) {
@@ -42,15 +43,17 @@ export async function POST(request: Request) {
       summary?: string;
       blockers?: string;
       tomorrow?: string;
+      hoursWorked?: number | string;
     };
     const summary = body.summary?.trim();
+    const hoursWorked = Math.max(0, Number(body.hoursWorked) || 0);
 
     if (!summary) {
       return NextResponse.json({ error: "Summary is required." }, { status: 400 });
     }
 
     const db = getDb();
-    const data = {
+    const notes = {
       summary,
       blockers: body.blockers?.trim() || null,
       tomorrow: body.tomorrow?.trim() || null,
@@ -75,13 +78,14 @@ export async function POST(request: Request) {
         create: {
           projectId: project.id,
           entryDate: todayUtc(),
-          ...data,
+          ...notes,
         },
-        update: data,
+        update: notes,
       });
       return NextResponse.json({ entry });
     }
 
+    const data = { ...notes, hoursWorked };
     const entry = await db.eodEntry.upsert({
       where: {
         userId_entryDate: {

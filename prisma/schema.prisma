@@ -157,15 +157,16 @@ model QueuedMessage {
 }
 
 model EodEntry {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  entryDate DateTime @db.Date
-  summary   String
-  blockers  String?
-  tomorrow  String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entryDate   DateTime @db.Date
+  summary     String
+  blockers    String?
+  tomorrow    String?
+  hoursWorked Float    @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@unique([userId, entryDate])
 }

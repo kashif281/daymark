@@ -37,21 +37,19 @@ export function PwaControls() {
             <Download size={13} /> Install Daymark
           </button>
         )}
-        <button
-          className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#2f2e2c] py-2.5 text-[11px] font-semibold text-white disabled:opacity-50"
-          disabled={push.busy}
-          onClick={() => void (push.subscribed ? push.disable() : push.enable())}
-        >
-          <Bell size={13} />
-          {push.subscribed ? "Disable notifications" : "Enable notifications"}
-        </button>
-        <button
-          className="flex w-full items-center justify-center gap-2 rounded-lg border border-[#deddd8] py-2.5 text-[11px] font-semibold disabled:opacity-50"
-          disabled={push.busy || !push.subscribed}
-          onClick={() => void push.sendTest()}
-        >
-          Send test notification
-        </button>
+        {push.subscribed ? (
+          <p className="rounded-lg bg-[#f2faf5] px-3 py-2 text-[10px] leading-4 text-[#367653]">
+            Notifications are on for this phone.
+          </p>
+        ) : (
+          <button
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#2f2e2c] py-2.5 text-[11px] font-semibold text-white disabled:opacity-50"
+            disabled={push.busy}
+            onClick={() => void push.enable()}
+          >
+            <Bell size={13} /> Enable notifications
+          </button>
+        )}
       </div>
       {installMessage || push.message ? (
         <p className="mt-2 text-[10px] leading-4 text-[#777671]">

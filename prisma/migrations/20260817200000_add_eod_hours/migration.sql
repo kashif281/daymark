@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "EodEntry" ADD COLUMN "hoursWorked" DOUBLE PRECISION NOT NULL DEFAULT 0;

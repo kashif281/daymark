@@ -24,6 +24,7 @@ import {
   Settings,
   Sparkles,
   Trash2,
+  TrendingUp,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
@@ -33,9 +34,10 @@ import { NotificationBell } from "@/components/notification-bell";
 import { PwaControls } from "@/components/pwa-controls";
 import { ClientMessageCard } from "@/components/client-message-card";
 import { TaskActions } from "@/components/task-actions";
+import { TrendChart } from "@/components/trend-chart";
 
 type Status = "todo" | "progress" | "done";
-type View = "today" | "timeline" | "queue" | "messages" | "eod" | "archive" | "settings";
+type View = "today" | "timeline" | "queue" | "messages" | "eod" | "progress" | "archive" | "settings";
 type ArchivedProject = {
   id: string;
   name: string;
@@ -48,6 +50,22 @@ type EodItem = {
   summary: string;
   blockers: string | null;
   tomorrow: string | null;
+  hoursWorked?: number;
+};
+type ProgressDay = {
+  date: string;
+  hours: number;
+  summary: string | null;
+  blockers: string | null;
+  tasksDone: number;
+  tasksTotal: number;
+  tasks: {
+    id: string;
+    title: string;
+    status: Status;
+    projectName: string;
+    projectColor: string;
+  }[];
 };
 type Task = {
   id: string;
@@ -150,7 +168,15 @@ export default function Home() {
   const [todoComposerOpen, setTodoComposerOpen] = useState(false);
   const [newTodo, setNewTodo] = useState("");
   const [newTodoReminder, setNewTodoReminder] = useState("");
-  const [notificationOpenSignal, setNotificationOpenSignal] = useState(0);
+  const [progressDays, setProgressDays] = useState<ProgressDay[]>([]);
+  const [progressComparison, setProgressComparison] = useState({
+    hoursRecent: 0,
+    hoursPrevious: 0,
+    tasksRecent: 0,
+    tasksPrevious: 0,
+    hoursDelta: 0,
+    tasksDelta: 0,
+  });
   const [user, setUser] = useState({ name: "", email: "" });
 
   useEffect(() => {
@@ -221,25 +247,13 @@ export default function Home() {
     [queuedMessages],
   );
 
-  const timelineTasks = useMemo(
-    () =>
-      projects.flatMap((project) =>
-        project.tasks.map((task) => ({
-          ...task,
-          projectId: project.id,
-          projectName: project.name,
-          projectColor: project.color,
-        })),
-      ),
-    [projects],
-  );
-
   const viewLabel: Record<View, string> = {
     today: "Today",
     timeline: "Timeline",
     queue: "Message queue",
     messages: "Client messages",
     eod: "EOD entries",
+    progress: "Progress",
     archive: "Archive",
     settings: "Settings",
   };
@@ -481,9 +495,8 @@ export default function Home() {
   function openView(next: View) {
     setView(next);
     setSidebarOpen(false);
-    if (next === "eod") {
-      void loadEodEntries();
-    }
+    if (next === "eod") void loadEodEntries();
+    if (next === "progress" || next === "timeline") void loadProgress();
   }
 
   async function loadEodEntries() {
@@ -491,6 +504,17 @@ export default function Home() {
     if (!response.ok) return;
     const data = (await response.json()) as { entries: EodItem[] };
     setEodEntries(data.entries);
+  }
+
+  async function loadProgress() {
+    const response = await fetch("/api/progress");
+    if (!response.ok) return;
+    const data = (await response.json()) as {
+      days: ProgressDay[];
+      comparison: typeof progressComparison;
+    };
+    setProgressDays(data.days);
+    setProgressComparison(data.comparison);
   }
 
   async function archiveProject(project: Project) {
@@ -605,9 +629,6 @@ export default function Home() {
     setTodos((current) =>
       current.map((todo) => (todo.id === temporaryId ? data.todo : todo)),
     );
-    if (reminderAt) {
-      setNotificationOpenSignal((current) => current + 1);
-    }
   }
 
   async function toggleTodo(todo: Todo) {
@@ -890,6 +911,12 @@ export default function Home() {
               onClick={() => openView("timeline")}
             />
             <SidebarItem
+              icon={<TrendingUp size={17} />}
+              label="Progress"
+              active={view === "progress"}
+              onClick={() => openView("progress")}
+            />
+            <SidebarItem
               icon={<Inbox size={17} />}
               label="Message queue"
               badge={queuedItems.length ? String(queuedItems.length) : undefined}
@@ -1006,7 +1033,7 @@ export default function Home() {
             </button>
             <NotificationBell
               todos={todos}
-              openSignal={notificationOpenSignal}
+              onResolve={(todo) => void toggleTodo(todo)}
             />
             <button
               className="ml-1 flex items-center gap-2 rounded-lg bg-[#292927] px-3 py-2 text-[13px] font-semibold text-white shadow-sm hover:bg-black"
@@ -1305,14 +1332,22 @@ export default function Home() {
               </section>
 
               <section className="rounded-2xl border border-[#e6e5e0] bg-white p-5">
-                <div className="flex items-center justify-between">
-                  <h2 className="flex items-center gap-2 text-[13px] font-bold">
-                    <Send size={14} className="text-[#df9145]" />
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="flex min-w-0 items-center gap-2 text-[13px] font-bold">
+                    <Send size={14} className="shrink-0 text-[#df9145]" />
                     Message queue
                   </h2>
-                  <span className="rounded-full bg-[#fff0de] px-2 py-0.5 text-[9px] font-bold text-[#a5672c]">
-                    {queuedItems.length} waiting
-                  </span>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span className="rounded-full bg-[#fff0de] px-2 py-0.5 text-[9px] font-bold text-[#a5672c]">
+                      {queuedItems.length}
+                    </span>
+                    <button
+                      className="inline-flex items-center gap-1 rounded-lg bg-[#2f2e2c] px-2 py-1 text-[11px] font-semibold text-white hover:bg-black"
+                      onClick={() => openMessageComposer("queued")}
+                    >
+                      <Plus size={12} /> Queue
+                    </button>
+                  </div>
                 </div>
                 <div className="mt-4 space-y-3">
                   {queuedItems.length ? (
@@ -1331,33 +1366,26 @@ export default function Home() {
                     </p>
                   )}
                 </div>
-                <button
-                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-[#2f2e2c] py-2.5 text-[11px] font-semibold text-white hover:bg-black"
-                  onClick={() => openMessageComposer("queued")}
-                >
-                  <Plus size={13} /> Queue a message
-                </button>
               </section>
 
               <PwaControls />
 
               <section className="rounded-2xl bg-[#2f2e2c] p-5 text-white">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <h2 className="flex items-center gap-2 text-[13px] font-bold">
                     <FileText size={14} className="text-[#c5b9ff]" />
                     End of day
                   </h2>
-                  <span className="text-[10px] text-white/45">Not started</span>
+                  <button
+                    className="rounded-lg bg-white px-2 py-1 text-[11px] font-bold text-[#343331] hover:bg-[#f3f1ff]"
+                    onClick={() => setEodOpen(true)}
+                  >
+                    Write
+                  </button>
                 </div>
                 <p className="mt-3 text-[11px] leading-5 text-white/60">
-                  Capture what you completed, blockers, and what comes next.
+                  Capture what you completed, hours worked, and what comes next.
                 </p>
-                <button
-                  className="mt-4 w-full rounded-lg bg-white py-2.5 text-[11px] font-bold text-[#343331] hover:bg-[#f3f1ff]"
-                  onClick={() => setEodOpen(true)}
-                >
-                  Write today&apos;s EOD
-                </button>
               </section>
             </aside>
           </div>
@@ -1368,34 +1396,53 @@ export default function Home() {
             <section className="rounded-2xl border border-[#e6e5e0] bg-white p-5">
               <h1 className="text-2xl font-bold tracking-[-0.04em]">Timeline</h1>
               <p className="mt-1 text-sm text-[#777671]">
-                Today&apos;s tasks across every active project
+                The last 30 days of project work
               </p>
-              <div className="mt-5 space-y-2">
-                {timelineTasks.length ? (
-                  timelineTasks.map((task) => (
-                    <div
-                      key={task.id}
-                      className="flex items-start gap-3 rounded-xl border border-[#ecebe7] px-4 py-3"
-                    >
-                      <span
-                        className="mt-1.5 size-2 shrink-0 rounded-full"
-                        style={{ background: task.projectColor }}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[11px] font-semibold text-[#9a9994]">
-                          {task.projectName}
+              <div className="mt-5 space-y-5">
+                {progressDays.filter((day) => day.tasksTotal).length ? (
+                  [...progressDays].reverse().map((day) =>
+                    day.tasksTotal ? (
+                      <div key={day.date}>
+                        <p className="text-[11px] font-bold text-[#9a9994]">
+                          {new Intl.DateTimeFormat(undefined, {
+                            weekday: "short",
+                            month: "short",
+                            day: "numeric",
+                          }).format(new Date(day.date))}
+                          <span className="ml-2 font-medium">
+                            {day.tasksDone}/{day.tasksTotal} done
+                            {day.hours ? ` · ${day.hours}h` : ""}
+                          </span>
                         </p>
-                        <p className="mt-0.5 text-sm">{task.title}</p>
+                        <div className="mt-2 space-y-2">
+                          {day.tasks.map((task) => (
+                            <div
+                              key={task.id}
+                              className="flex items-start gap-3 rounded-xl border border-[#ecebe7] px-4 py-3"
+                            >
+                              <span
+                                className="mt-1.5 size-2 shrink-0 rounded-full"
+                                style={{ background: task.projectColor }}
+                              />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-[11px] font-semibold text-[#9a9994]">
+                                  {task.projectName}
+                                </p>
+                                <p className="mt-0.5 text-sm">{task.title}</p>
+                              </div>
+                              <span
+                                className={`rounded-lg px-2 py-1 text-[10px] font-semibold ${statusStyle[task.status].className}`}
+                              >
+                                {statusStyle[task.status].label}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                      <span
-                        className={`rounded-lg px-2 py-1 text-[10px] font-semibold ${statusStyle[task.status].className}`}
-                      >
-                        {statusStyle[task.status].label}
-                      </span>
-                    </div>
-                  ))
+                    ) : null,
+                  )
                 ) : (
-                  <p className="text-sm text-[#8f8e89]">No tasks for today.</p>
+                  <p className="text-sm text-[#8f8e89]">No tasks in the last 30 days.</p>
                 )}
               </div>
             </section>
@@ -1413,10 +1460,11 @@ export default function Home() {
                   </p>
                 </div>
                 <button
-                  className="rounded-lg bg-[#292927] px-3 py-2 text-xs font-semibold text-white"
+                  className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[#292927] px-2.5 py-1.5 text-[11px] font-semibold text-white sm:px-3 sm:py-2 sm:text-xs"
                   onClick={() => openMessageComposer("queued")}
                 >
-                  Queue a message
+                  <Plus size={12} />
+                  Queue
                 </button>
               </div>
               <div className="mt-5 space-y-3">
@@ -1490,20 +1538,20 @@ export default function Home() {
 
           {view === "eod" && (
             <section className="rounded-2xl border border-[#e6e5e0] bg-white p-5">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <div>
                   <h1 className="text-2xl font-bold tracking-[-0.04em]">
                     EOD entries
                   </h1>
                   <p className="mt-1 text-sm text-[#777671]">
-                    Daily wrap-ups you have saved
+                    Daily wrap-ups from the last 30 days
                   </p>
                 </div>
                 <button
-                  className="rounded-lg bg-[#292927] px-3 py-2 text-xs font-semibold text-white"
+                  className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[#292927] px-2.5 py-1.5 text-[11px] font-semibold text-white sm:px-3 sm:py-2 sm:text-xs"
                   onClick={() => setEodOpen(true)}
                 >
-                  Write today&apos;s EOD
+                  Write
                 </button>
               </div>
               <div className="mt-5 space-y-3">
@@ -1513,13 +1561,20 @@ export default function Home() {
                       key={entry.id}
                       className="rounded-xl border border-[#ecebe7] p-4"
                     >
-                      <p className="text-[11px] font-bold text-[#9a9994]">
-                        {new Intl.DateTimeFormat(undefined, {
-                          weekday: "long",
-                          month: "long",
-                          day: "numeric",
-                        }).format(new Date(entry.date))}
-                      </p>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[11px] font-bold text-[#9a9994]">
+                          {new Intl.DateTimeFormat(undefined, {
+                            weekday: "long",
+                            month: "long",
+                            day: "numeric",
+                          }).format(new Date(entry.date))}
+                        </p>
+                        {entry.hoursWorked ? (
+                          <p className="text-[11px] font-semibold text-[#5f4db9]">
+                            {entry.hoursWorked}h
+                          </p>
+                        ) : null}
+                      </div>
                       <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
                         {entry.summary}
                       </p>
@@ -1540,6 +1595,121 @@ export default function Home() {
                     No EOD entries yet. Write today&apos;s wrap-up to start the log.
                   </p>
                 )}
+              </div>
+            </section>
+          )}
+
+          {view === "progress" && (
+            <section className="space-y-5">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <h1 className="text-2xl font-bold tracking-[-0.04em]">
+                    Progress
+                  </h1>
+                  <p className="mt-1 text-sm text-[#777671]">
+                    30-day hours, completed work, and week-over-week change
+                  </p>
+                </div>
+                <button
+                  className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[#292927] px-2.5 py-1.5 text-[11px] font-semibold text-white"
+                  onClick={() => setEodOpen(true)}
+                >
+                  Log hours
+                </button>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-[#e6e5e0] bg-white p-4">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#9a9994]">
+                    Hours this week
+                  </p>
+                  <p className="mt-2 text-2xl font-bold">
+                    {progressComparison.hoursRecent}
+                    <span className="ml-1 text-sm font-semibold text-[#8f8e89]">h</span>
+                  </p>
+                  <p
+                    className={`mt-1 text-[12px] font-semibold ${
+                      progressComparison.hoursDelta > 0
+                        ? "text-[#367653]"
+                        : progressComparison.hoursDelta < 0
+                          ? "text-[#a7463d]"
+                          : "text-[#8f8e89]"
+                    }`}
+                  >
+                    {progressComparison.hoursDelta > 0
+                      ? `Up ${progressComparison.hoursDelta}h vs last week`
+                      : progressComparison.hoursDelta < 0
+                        ? `Down ${Math.abs(progressComparison.hoursDelta)}h vs last week`
+                        : "Same hours as last week"}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-[#e6e5e0] bg-white p-4">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#9a9994]">
+                    Tasks done this week
+                  </p>
+                  <p className="mt-2 text-2xl font-bold">
+                    {progressComparison.tasksRecent}
+                  </p>
+                  <p
+                    className={`mt-1 text-[12px] font-semibold ${
+                      progressComparison.tasksDelta > 0
+                        ? "text-[#367653]"
+                        : progressComparison.tasksDelta < 0
+                          ? "text-[#a7463d]"
+                          : "text-[#8f8e89]"
+                    }`}
+                  >
+                    {progressComparison.tasksDelta > 0
+                      ? `Up ${progressComparison.tasksDelta} vs last week`
+                      : progressComparison.tasksDelta < 0
+                        ? `Down ${Math.abs(progressComparison.tasksDelta)} vs last week`
+                        : "Same completed tasks as last week"}
+                  </p>
+                </div>
+              </div>
+              <div className="grid gap-4 rounded-2xl border border-[#e6e5e0] bg-white p-5 lg:grid-cols-2">
+                <TrendChart
+                  label="Hours worked"
+                  color="#6d5bd0"
+                  values={progressDays.map((day) => day.hours)}
+                />
+                <TrendChart
+                  label="Tasks completed"
+                  color="#4c9a70"
+                  values={progressDays.map((day) => day.tasksDone)}
+                />
+              </div>
+              <div className="rounded-2xl border border-[#e6e5e0] bg-white p-5">
+                <h2 className="text-[13px] font-bold">Daily log</h2>
+                <div className="mt-4 space-y-3">
+                  {[...progressDays].reverse().map((day) => (
+                    <div
+                      key={day.date}
+                      className="rounded-xl border border-[#ecebe7] p-3"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[12px] font-bold">
+                          {new Intl.DateTimeFormat(undefined, {
+                            weekday: "short",
+                            month: "short",
+                            day: "numeric",
+                          }).format(new Date(day.date))}
+                        </p>
+                        <p className="text-[11px] text-[#8f8e89]">
+                          {day.hours}h · {day.tasksDone}/{day.tasksTotal} tasks
+                        </p>
+                      </div>
+                      {day.summary ? (
+                        <p className="mt-2 text-[12px] leading-5 text-[#565550]">
+                          {day.summary}
+                        </p>
+                      ) : (
+                        <p className="mt-2 text-[12px] text-[#9a9994]">
+                          No EOD logged
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
             </section>
           )}
@@ -1940,6 +2110,7 @@ export default function Home() {
           onClose={() => {
             setEodOpen(false);
             if (view === "eod") void loadEodEntries();
+            if (view === "progress" || view === "timeline") void loadProgress();
           }}
         />
       ) : null}
