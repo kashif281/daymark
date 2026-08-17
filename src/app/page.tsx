@@ -29,6 +29,7 @@ import {
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { EodModal } from "@/components/eod-modal";
 import { PwaInstallHeaderButton } from "@/components/pwa-install-prompt";
+import { NotificationBell } from "@/components/notification-bell";
 import { PwaControls } from "@/components/pwa-controls";
 import { ClientMessageCard } from "@/components/client-message-card";
 import { TaskActions } from "@/components/task-actions";
@@ -141,6 +142,7 @@ export default function Home() {
   const [todoComposerOpen, setTodoComposerOpen] = useState(false);
   const [newTodo, setNewTodo] = useState("");
   const [newTodoReminder, setNewTodoReminder] = useState("");
+  const [notificationOpenSignal, setNotificationOpenSignal] = useState(0);
   const [user, setUser] = useState({ name: "", email: "" });
 
   useEffect(() => {
@@ -602,6 +604,9 @@ export default function Home() {
     setTodos((current) =>
       current.map((todo) => (todo.id === temporaryId ? data.todo : todo)),
     );
+    if (reminderAt) {
+      setNotificationOpenSignal((current) => current + 1);
+    }
   }
 
   async function toggleTodo(todo: Todo) {
@@ -961,8 +966,8 @@ export default function Home() {
       </aside>
 
       <div className="lg:pl-[244px]">
-        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-[#e7e6e1] bg-[#f7f7f5]/90 px-5 backdrop-blur-md sm:px-8">
-          <div className="flex items-center gap-3">
+        <header className="sticky top-0 z-40 flex h-16 items-center justify-between border-b border-[#e7e6e1] bg-[#f7f7f5]/90 px-4 backdrop-blur-md sm:px-8">
+          <div className="flex min-w-0 items-center gap-3">
             <button
               aria-label="Open menu"
               className="rounded-lg p-2 hover:bg-white lg:hidden"
@@ -970,22 +975,25 @@ export default function Home() {
             >
               <Menu size={19} />
             </button>
-            <span className="text-sm font-semibold">{viewLabel[view]}</span>
+            <span className="truncate text-sm font-semibold">{viewLabel[view]}</span>
             <span className="hidden text-sm text-[#a3a29d] sm:inline">
               / {todayLabel}
             </span>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex shrink-0 items-center gap-1">
             <PwaInstallHeaderButton />
-            <button aria-label="Search" className="rounded-lg p-2 text-[#777771] hover:bg-white">
+            <button
+              aria-label="Search"
+              className="hidden rounded-lg p-2 text-[#777771] hover:bg-white sm:inline-flex"
+            >
               <Search size={18} />
             </button>
-            <button aria-label="Notifications" className="relative rounded-lg p-2 text-[#777771] hover:bg-white">
-              <Bell size={18} />
-              <span className="absolute right-2 top-1.5 size-1.5 rounded-full bg-[#7966db]" />
-            </button>
+            <NotificationBell
+              todos={todos}
+              openSignal={notificationOpenSignal}
+            />
             <button
-              className="ml-2 flex items-center gap-2 rounded-lg bg-[#292927] px-3.5 py-2 text-[13px] font-semibold text-white shadow-sm hover:bg-black"
+              className="ml-1 flex items-center gap-2 rounded-lg bg-[#292927] px-3 py-2 text-[13px] font-semibold text-white shadow-sm hover:bg-black"
               onClick={() => openTaskComposer()}
             >
               <Plus size={15} />
@@ -1598,7 +1606,7 @@ export default function Home() {
               <div>
                 <h2 className="text-base font-bold">Add a personal todo</h2>
                 <p className="mt-1 text-xs text-[#8c8b86]">
-                  Set a time to receive an email if it is still pending.
+                  Set a time to get a push notification if it is still pending.
                 </p>
               </div>
               <button

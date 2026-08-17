@@ -20,7 +20,13 @@ export async function sendTodoPushReminder({
 }) {
   const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
   const privateKey = process.env.VAPID_PRIVATE_KEY;
-  const subject = process.env.VAPID_SUBJECT;
+  const subjectValue = process.env.VAPID_SUBJECT;
+  const subject =
+    subjectValue &&
+    !/^mailto:/i.test(subjectValue) &&
+    !/^https?:\/\//i.test(subjectValue)
+      ? `mailto:${subjectValue}`
+      : subjectValue;
 
   if (!publicKey || !privateKey || !subject) {
     throw new Error("Web push is not configured.");
@@ -48,6 +54,7 @@ export async function sendTodoPushReminder({
           tag: `todo-${todoId}`,
           url: "/",
         }),
+        { TTL: 60 * 60, urgency: "high" },
       );
       delivered += 1;
     } catch (error) {

@@ -16,7 +16,10 @@ declare global {
 export function PwaRegister() {
   useEffect(() => {
     if ("serviceWorker" in navigator) {
-      void navigator.serviceWorker.register("/sw.js");
+      void navigator.serviceWorker.register("/sw.js", {
+        scope: "/",
+        updateViaCache: "none",
+      });
     }
 
     const captureInstallPrompt = (event: Event) => {

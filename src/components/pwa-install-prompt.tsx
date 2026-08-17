@@ -184,7 +184,7 @@ export function PwaInstallBanner() {
 
   return (
     <>
-      <div className="sticky top-0 z-50 border-b border-[#ddd8f5] bg-[#efedfb] px-4 py-3 xl:hidden">
+      <div className="border-b border-[#ddd8f5] bg-[#efedfb] px-4 py-3 xl:hidden">
         <div className="mx-auto flex max-w-[1220px] items-center gap-3">
           <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#6d5bd0] text-white">
             <Download size={16} />

@@ -13,23 +13,25 @@ self.addEventListener("fetch", (event) => {
 });
 
 self.addEventListener("push", (event) => {
-  let payload = {};
-
-  try {
-    payload = event.data?.json() ?? {};
-  } catch {
-    payload = { body: event.data?.text() };
-  }
-
   event.waitUntil(
-    self.registration.showNotification(payload.title || APP_NAME, {
-      body: payload.body || "You have a pending todo.",
-      icon: "/icon-192.png",
-      badge: "/icon-192.png",
-      tag: payload.tag || "daymark-reminder",
-      data: { url: payload.url || "/" },
-      renotify: true,
-    }),
+    (async () => {
+      let payload = {};
+
+      try {
+        payload = event.data ? event.data.json() : {};
+      } catch {
+        payload = { body: event.data?.text() };
+      }
+
+      await self.registration.showNotification(payload.title || APP_NAME, {
+        body: payload.body || "You have a pending todo.",
+        icon: "/icon-192.png",
+        badge: "/icon-192.png",
+        tag: payload.tag || "daymark-reminder",
+        data: { url: payload.url || "/" },
+        renotify: true,
+      });
+    })(),
   );
 });
 
