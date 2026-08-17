@@ -1,69 +1,1422 @@
-import Image from "next/image";
+"use client";
+
+import { UserButton } from "@clerk/nextjs";
+import Link from "next/link";
+import {
+  Archive,
+  Bell,
+  CalendarDays,
+  Check,
+  ChevronDown,
+  Circle,
+  Clock3,
+  ExternalLink,
+  FileText,
+  Inbox,
+  LayoutGrid,
+  Menu,
+  MessageSquareText,
+  MoreHorizontal,
+  Plus,
+  Search,
+  Send,
+  Settings,
+  Sparkles,
+  Trash2,
+  X,
+} from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { EodModal } from "@/components/eod-modal";
+import { PwaControls } from "@/components/pwa-controls";
+import { TaskActions } from "@/components/task-actions";
+
+type Status = "todo" | "progress" | "done";
+type Task = {
+  id: string;
+  title: string;
+  description?: string | null;
+  screenshotUrl?: string | null;
+  status: Status;
+};
+type ClientMessage = {
+  id: string;
+  sender: string;
+  content: string;
+  receivedAt: string;
+};
+type QueuedMessage = { id: string; content: string; status: string };
+type Todo = {
+  id: string;
+  title: string;
+  completed: boolean;
+  reminderAt: string | null;
+  reminderSentAt: string | null;
+};
+type Project = {
+  id: string;
+  name: string;
+  client: string;
+  color: string;
+  tasks: Task[];
+  clientMessages?: ClientMessage[];
+  queuedMessages?: QueuedMessage[];
+};
+
+const statusStyle: Record<Status, { label: string; className: string; cardName: string }> = {
+  todo: {
+    label: "Not started",
+    className: "bg-[#f0f0ed] text-[#696965]",
+    cardName: "border-[#e3e2dd] bg-[#fafaf8]",
+  },
+  progress: {
+    label: "In progress",
+    className: "bg-[#fff2d8] text-[#936521]",
+    cardName: "border-[#f0d49f] bg-[#fffaf0]",
+  },
+  done: {
+    label: "Done",
+    className: "bg-[#e5f5eb] text-[#367653]",
+    cardName: "border-[#bddfca] bg-[#f2faf5]",
+  },
+};
+
+const PROJECT_COLORS = [
+  "#7161d6",
+  "#e09548",
+  "#4f9c7a",
+  "#d46a6a",
+  "#4f8ec9",
+  "#c27a4f",
+];
+
+const hasClerk = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
 export default function Home() {
-  return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [todos, setTodos] = useState<Todo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [projectComposerOpen, setProjectComposerOpen] = useState(false);
+  const [newTask, setNewTask] = useState("");
+  const [newTaskDescription, setNewTaskDescription] = useState("");
+  const [newTaskScreenshotUrl, setNewTaskScreenshotUrl] = useState("");
+  const [eodOpen, setEodOpen] = useState(false);
+  const [messageComposer, setMessageComposer] = useState<
+    "client" | "queued" | null
+  >(null);
+  const [messageProjectId, setMessageProjectId] = useState("");
+  const [messageContent, setMessageContent] = useState("");
+  const [messageSender, setMessageSender] = useState("");
+  const [newProjectName, setNewProjectName] = useState("");
+  const [newProjectClient, setNewProjectClient] = useState("");
+  const [renameProjectId, setRenameProjectId] = useState("");
+  const [editProjectName, setEditProjectName] = useState("");
+  const [editProjectClient, setEditProjectClient] = useState("");
+  const [taskProjectId, setTaskProjectId] = useState<string>("");
+  const [todoComposerOpen, setTodoComposerOpen] = useState(false);
+  const [newTodo, setNewTodo] = useState("");
+  const [newTodoReminder, setNewTodoReminder] = useState("");
+  const [user, setUser] = useState({ name: "", email: "" });
+
+  useEffect(() => {
+    fetch("/api/dashboard")
+      .then((response) => {
+        if (!response.ok) throw new Error("Could not load dashboard");
+        return response.json() as Promise<{
+          user: { name: string | null; email: string };
+          projects: Project[];
+          todos: Todo[];
+        }>;
+      })
+      .then((data) => {
+        setProjects(data.projects);
+        setTodos(data.todos);
+        setUser({
+          name: data.user.name ?? data.user.email.split("@")[0],
+          email: data.user.email,
+        });
+        if (data.projects[0]) setTaskProjectId(data.projects[0].id);
+      })
+      .catch((error) => {
+        console.error(error);
+        setLoadError("Could not load your dashboard.");
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const counts = useMemo(() => {
+    const tasks = projects.flatMap((project) => project.tasks);
+    return {
+      total: tasks.length,
+      done: tasks.filter((task) => task.status === "done").length,
+      progress: tasks.filter((task) => task.status === "progress").length,
+    };
+  }, [projects]);
+  const latestMessage = useMemo(() => {
+    const entries = projects.flatMap((project) =>
+      (project.clientMessages ?? []).map((message) => ({
+        message,
+        projectName: project.name,
+      })),
+    );
+    return entries[0] ?? null;
+  }, [projects]);
+
+  const queuedMessages = useMemo(
+    () =>
+      projects.flatMap((project) =>
+        (project.queuedMessages ?? [])
+          .filter((message) => message.status !== "sent")
+          .map((message) => ({
+            message,
+            projectName: project.name,
+            color: project.color,
+          })),
+      ),
+    [projects],
+  );
+
+  const firstName = user.name.split(" ")[0] || "there";
+  const initials = user.name
+    .split(" ")
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+  const todayLabel = new Intl.DateTimeFormat(undefined, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  }).format(new Date());
+  const greeting =
+    new Date().getHours() < 12
+      ? "Good morning"
+      : new Date().getHours() < 18
+        ? "Good afternoon"
+        : "Good evening";
+
+  function setTaskStatus(projectId: string, taskId: string, status: Status) {
+    setProjects((current) =>
+      current.map((project) =>
+        project.id === projectId
+          ? {
+              ...project,
+              tasks: project.tasks.map((task) =>
+                task.id === taskId
+                  ? { ...task, status }
+                  : task,
+              ),
+            }
+          : project,
+      ),
+    );
+
+    if (!taskId.startsWith("demo-")) {
+      void fetch("/api/dashboard", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskId, status }),
+      });
+    }
+  }
+
+  function updateTask(
+    projectId: string,
+    taskId: string,
+    updates: { description: string | null; screenshotUrl: string | null },
+  ) {
+    setProjects((current) =>
+      current.map((project) =>
+        project.id === projectId
+          ? {
+              ...project,
+              tasks: project.tasks.map((task) =>
+                task.id === taskId ? { ...task, ...updates } : task,
+              ),
+            }
+          : project,
+      ),
+    );
+  }
+
+  function removeTask(projectId: string, taskId: string) {
+    setProjects((current) =>
+      current.map((project) =>
+        project.id === projectId
+          ? {
+              ...project,
+              tasks: project.tasks.filter((task) => task.id !== taskId),
+            }
+          : project,
+      ),
+    );
+  }
+
+  async function addTask() {
+    const title = newTask.trim();
+    if (!title) return;
+
+    const description = newTaskDescription.trim() || null;
+    const screenshotUrl = newTaskScreenshotUrl.trim() || null;
+    const targetProjectId = taskProjectId || projects[0]?.id;
+    if (!targetProjectId) return;
+
+    const temporaryId = `demo-${Date.now()}`;
+    setProjects((current) =>
+      current.map((project) =>
+        project.id === targetProjectId
+          ? {
+              ...project,
+              tasks: [
+                ...project.tasks,
+                { id: temporaryId, title, description, screenshotUrl, status: "todo" },
+              ],
+            }
+          : project,
+      ),
+    );
+    setNewTask("");
+    setNewTaskDescription("");
+    setNewTaskScreenshotUrl("");
+    setComposerOpen(false);
+
+    const response = await fetch("/api/dashboard", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title,
+        description,
+        screenshotUrl,
+        projectId: targetProjectId,
+      }),
+    });
+    if (response.ok) {
+      const data = (await response.json()) as { projectId: string; task: Task };
+      setProjects((current) =>
+        current.map((project) =>
+          project.id === data.projectId
+            ? {
+                ...project,
+                tasks: project.tasks.map((task) =>
+                  task.id === temporaryId ? data.task : task,
+                ),
+              }
+            : project,
+        ),
+      );
+    } else {
+      setProjects((current) =>
+        current.map((project) =>
+          project.id === targetProjectId
+            ? {
+                ...project,
+                tasks: project.tasks.filter((task) => task.id !== temporaryId),
+              }
+            : project,
+        ),
+      );
+    }
+  }
+
+  async function addProject() {
+    const name = newProjectName.trim();
+    if (!name) return;
+
+    const client = newProjectClient.trim() || "No client";
+    const color = PROJECT_COLORS[projects.length % PROJECT_COLORS.length];
+    const temporaryId = `demo-project-${Date.now()}`;
+    const optimisticProject: Project = {
+      id: temporaryId,
+      name,
+      client,
+      color,
+      tasks: [],
+    };
+
+    setProjects((current) => [...current, optimisticProject]);
+    setTaskProjectId(temporaryId);
+    setNewProjectName("");
+    setNewProjectClient("");
+    setProjectComposerOpen(false);
+    setSidebarOpen(false);
+
+    const response = await fetch("/api/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, clientName: client, color }),
+    });
+
+    if (response.ok) {
+      const data = (await response.json()) as { project: Project };
+      setProjects((current) =>
+        current.map((project) =>
+          project.id === temporaryId ? data.project : project,
+        ),
+      );
+      setTaskProjectId(data.project.id);
+    } else {
+      setProjects((current) =>
+        current.filter((project) => project.id !== temporaryId),
+      );
+    }
+  }
+
+  function openRenameProject(project: Project) {
+    setRenameProjectId(project.id);
+    setEditProjectName(project.name);
+    setEditProjectClient(project.client === "No client" ? "" : project.client);
+  }
+
+  async function saveRenameProject() {
+    const name = editProjectName.trim();
+    if (!name || !renameProjectId) return;
+
+    const clientName = editProjectClient.trim() || null;
+    const projectId = renameProjectId;
+    const previous = projects;
+    setProjects((current) =>
+      current.map((project) =>
+        project.id === projectId
+          ? { ...project, name, client: clientName ?? "No client" }
+          : project,
+      ),
+    );
+    setRenameProjectId("");
+
+    const response = await fetch(`/api/projects/${projectId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, clientName }),
+    });
+
+    if (!response.ok) {
+      setProjects(previous);
+      return;
+    }
+
+    const data = (await response.json()) as {
+      project: { id: string; name: string; client: string; color: string };
+    };
+    setProjects((current) =>
+      current.map((project) =>
+        project.id === data.project.id
+          ? {
+              ...project,
+              name: data.project.name,
+              client: data.project.client,
+              color: data.project.color,
+            }
+          : project,
+      ),
+    );
+  }
+
+  async function addTodo() {
+    const title = newTodo.trim();
+    if (!title) return;
+
+    const reminderAt = newTodoReminder
+      ? new Date(newTodoReminder).toISOString()
+      : null;
+    const temporaryId = `temporary-todo-${Date.now()}`;
+    const optimistic: Todo = {
+      id: temporaryId,
+      title,
+      completed: false,
+      reminderAt,
+      reminderSentAt: null,
+    };
+    setTodos((current) => [optimistic, ...current]);
+    setNewTodo("");
+    setNewTodoReminder("");
+    setTodoComposerOpen(false);
+
+    const response = await fetch("/api/todos", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, reminderAt }),
+    });
+
+    if (!response.ok) {
+      setTodos((current) => current.filter((todo) => todo.id !== temporaryId));
+      return;
+    }
+
+    const data = (await response.json()) as { todo: Todo };
+    setTodos((current) =>
+      current.map((todo) => (todo.id === temporaryId ? data.todo : todo)),
+    );
+  }
+
+  async function toggleTodo(todo: Todo) {
+    const completed = !todo.completed;
+    setTodos((current) =>
+      current.map((item) =>
+        item.id === todo.id ? { ...item, completed } : item,
+      ),
+    );
+
+    const response = await fetch("/api/todos", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: todo.id, completed }),
+    });
+    if (!response.ok) {
+      setTodos((current) =>
+        current.map((item) => (item.id === todo.id ? todo : item)),
+      );
+    }
+  }
+
+  async function deleteTodo(id: string) {
+    const previous = todos;
+    setTodos((current) => current.filter((todo) => todo.id !== id));
+    const response = await fetch("/api/todos", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    if (!response.ok) setTodos(previous);
+  }
+
+  function openMessageComposer(type: "client" | "queued") {
+    setMessageProjectId(projects[0]?.id ?? "");
+    setMessageContent("");
+    setMessageSender("");
+    setMessageComposer(type);
+  }
+
+  async function saveMessage() {
+    const content = messageContent.trim();
+    const targetProjectId = messageProjectId || projects[0]?.id;
+    if (!content || !targetProjectId || !messageComposer) return;
+
+    const type = messageComposer;
+    const temporaryId = `demo-message-${Date.now()}`;
+    const targetProject = projects.find(
+      (project) => project.id === targetProjectId,
+    );
+
+    const nextProjects = projects.map((project) =>
+      project.id === targetProjectId
+        ? type === "client"
+          ? {
+              ...project,
+              clientMessages: [
+                {
+                  id: temporaryId,
+                  sender: messageSender.trim() || project.client,
+                  content,
+                  receivedAt: new Date().toISOString(),
+                },
+                ...(project.clientMessages ?? []),
+              ],
+            }
+          : {
+              ...project,
+              queuedMessages: [
+                { id: temporaryId, content, status: "draft" },
+                ...(project.queuedMessages ?? []),
+              ],
+            }
+        : project,
+    );
+
+    setProjects(nextProjects);
+    setMessageComposer(null);
+    setMessageContent("");
+    setMessageSender("");
+
+    if (!targetProject) return;
+
+    const response = await fetch(`/api/projects/${targetProjectId}/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type, content, senderName: messageSender }),
+    });
+
+    if (!response.ok) return;
+
+    const data = (await response.json()) as {
+      message: ClientMessage | QueuedMessage;
+    };
+
+    setProjects((current) =>
+      current.map((project) =>
+        project.id === targetProjectId
+          ? type === "client"
+            ? {
+                ...project,
+                clientMessages: (project.clientMessages ?? []).map((message) =>
+                  message.id === temporaryId
+                    ? (data.message as ClientMessage)
+                    : message,
+                ),
+              }
+            : {
+                ...project,
+                queuedMessages: (project.queuedMessages ?? []).map((message) =>
+                  message.id === temporaryId
+                    ? (data.message as QueuedMessage)
+                    : message,
+                ),
+              }
+          : project,
+      ),
+    );
+  }
+
+  function openTaskComposer(projectId?: string) {
+    setTaskProjectId(projectId || projects[0]?.id || "");
+    setNewTask("");
+    setNewTaskDescription("");
+    setNewTaskScreenshotUrl("");
+    setComposerOpen(true);
+  }
+
+  if (loading) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-[#f7f7f5] text-sm text-[#777671]">
+        Loading your dashboard…
+      </main>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-[#f7f7f5] p-6 text-center">
+        <div>
+          <h1 className="text-xl font-bold">Dashboard unavailable</h1>
+          <p className="mt-2 text-sm text-[#777671]">{loadError}</p>
         </div>
       </main>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[#f7f7f5] text-[#252522]">
+      {sidebarOpen && (
+        <button
+          aria-label="Close menu"
+          className="fixed inset-0 z-30 bg-black/25 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 flex w-[244px] flex-col overflow-hidden border-r border-[#e6e5e0] bg-[#fbfbfa] px-3 py-4 transition-transform lg:translate-x-0 ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <div className="flex shrink-0 items-center justify-between px-2">
+          <div className="flex items-center gap-2.5">
+            <div className="grid size-8 place-items-center rounded-xl bg-[#6d5bd0] text-white shadow-sm shadow-purple-200">
+              <Sparkles size={16} strokeWidth={2.4} />
+            </div>
+            <span className="text-[17px] font-bold tracking-[-0.02em]">
+              daymark
+            </span>
+          </div>
+          <button
+            aria-label="Close menu"
+            className="rounded-md p-1.5 text-[#777771] hover:bg-[#efefec] lg:hidden"
+            onClick={() => setSidebarOpen(false)}
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="-mx-1 min-h-0 flex-1 overflow-y-auto overscroll-contain px-1">
+          <nav className="mt-8 space-y-1 text-[14px]">
+            <SidebarItem icon={<LayoutGrid size={17} />} label="Today" active />
+            <SidebarItem icon={<CalendarDays size={17} />} label="Timeline" />
+            <SidebarItem
+              icon={<Inbox size={17} />}
+              label="Message queue"
+              badge={queuedMessages.length ? String(queuedMessages.length) : undefined}
+            />
+            <SidebarItem icon={<FileText size={17} />} label="EOD entries" />
+          </nav>
+
+          <div className="mt-8 flex items-center justify-between px-2">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#9a9994]">
+              Projects
+            </span>
+            <button
+              aria-label="Add project"
+              className="text-[#8d8c87] hover:text-[#444440]"
+              onClick={() => setProjectComposerOpen(true)}
+            >
+              <Plus size={15} />
+            </button>
+          </div>
+          <div className="mt-2 space-y-0.5 pb-2">
+            {projects.map((project) => (
+              <Link
+                key={project.id}
+                href={`/projects/${project.id}`}
+                className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left text-[13px] text-[#5f5e5a] hover:bg-[#f0f0ed]"
+                onClick={() => setSidebarOpen(false)}
+              >
+                <span
+                  className="size-2 rounded-full"
+                  style={{ background: project.color }}
+                />
+                <span className="truncate">{project.name}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        <div className="shrink-0 space-y-1 border-t border-[#e8e7e3] pt-3 text-[13px]">
+          <SidebarItem icon={<Archive size={16} />} label="Archive" />
+          <SidebarItem icon={<Settings size={16} />} label="Settings" />
+          <div className="mt-3 flex items-center gap-2.5 rounded-xl px-2 py-2">
+            {hasClerk ? (
+              <UserButton />
+            ) : (
+              <div className="grid size-8 shrink-0 place-items-center rounded-full bg-[#ddd5ff] text-xs font-bold text-[#5f4db9]">
+                {initials}
+              </div>
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[13px] font-semibold">{user.name}</p>
+              <p className="truncate text-[11px] text-[#979690]">
+                {user.email}
+              </p>
+            </div>
+            <ChevronDown size={14} className="text-[#999892]" />
+          </div>
+        </div>
+      </aside>
+
+      <div className="lg:pl-[244px]">
+        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-[#e7e6e1] bg-[#f7f7f5]/90 px-5 backdrop-blur-md sm:px-8">
+          <div className="flex items-center gap-3">
+            <button
+              aria-label="Open menu"
+              className="rounded-lg p-2 hover:bg-white lg:hidden"
+              onClick={() => setSidebarOpen(true)}
+            >
+              <Menu size={19} />
+            </button>
+            <span className="text-sm font-semibold">Today</span>
+            <span className="hidden text-sm text-[#a3a29d] sm:inline">
+              / {todayLabel}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button aria-label="Search" className="rounded-lg p-2 text-[#777771] hover:bg-white">
+              <Search size={18} />
+            </button>
+            <button aria-label="Notifications" className="relative rounded-lg p-2 text-[#777771] hover:bg-white">
+              <Bell size={18} />
+              <span className="absolute right-2 top-1.5 size-1.5 rounded-full bg-[#7966db]" />
+            </button>
+            <button
+              className="ml-2 flex items-center gap-2 rounded-lg bg-[#292927] px-3.5 py-2 text-[13px] font-semibold text-white shadow-sm hover:bg-black"
+              onClick={() => openTaskComposer()}
+            >
+              <Plus size={15} /> Add task
+            </button>
+          </div>
+        </header>
+
+        <main className="mx-auto max-w-[1220px] px-5 py-8 sm:px-8 lg:py-10">
+          <section>
+            <p className="text-sm font-medium text-[#85847f]">
+              {greeting}, {firstName}
+            </p>
+            <div className="mt-1 flex flex-wrap items-end justify-between gap-4">
+              <div>
+                <h1 className="text-[32px] font-bold tracking-[-0.045em] sm:text-[38px]">
+                  Let&apos;s make today count.
+                </h1>
+                <p className="mt-2 text-[14px] text-[#777671]">
+                  {counts.total} tasks across {projects.length} projects
+                </p>
+              </div>
+              <div className="flex gap-6 rounded-xl border border-[#e5e4df] bg-white px-5 py-3 shadow-[0_1px_2px_rgba(0,0,0,.02)]">
+                <Stat value={counts.done} label="Done" color="#4c9a70" />
+                <Stat value={counts.progress} label="In progress" color="#db9b45" />
+                <Stat
+                  value={counts.total - counts.done - counts.progress}
+                  label="To do"
+                  color="#979691"
+                />
+              </div>
+            </div>
+          </section>
+
+          <div className="mt-9 grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_310px]">
+            <div className="space-y-5">
+              {projects.map((project) => (
+                <section
+                  key={project.id}
+                  className="overflow-hidden rounded-2xl border border-[#e6e5e0] bg-white shadow-[0_1px_3px_rgba(25,25,20,.025)]"
+                >
+                  <div className="flex items-center justify-between border-b border-[#ecebe7] px-5 py-4">
+                    <div className="flex items-center gap-3">
+                      <span
+                        className="size-2.5 rounded-full"
+                        style={{ background: project.color }}
+                      />
+                      <div>
+                        <Link
+                          href={`/projects/${project.id}`}
+                          className="text-[14px] font-bold hover:text-[#6553c6]"
+                        >
+                          {project.name}
+                        </Link>
+                        <p className="mt-0.5 text-[11px] text-[#9a9994]">
+                          {project.client}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      aria-label={`Rename ${project.name}`}
+                      className="rounded-lg p-1.5 text-[#8b8a85] hover:bg-[#f5f5f2]"
+                      onClick={() => openRenameProject(project)}
+                    >
+                      <MoreHorizontal size={18} />
+                    </button>
+                  </div>
+                  <div className="space-y-2 p-3">
+                    {project.tasks.map((task) => (
+                      <div
+                        key={task.id}
+                        className={`flex w-full items-start gap-3 rounded-xl border px-4 py-3.5 text-left transition-colors ${statusStyle[task.status].cardName}`}
+                      >
+                        <span
+                          className={`mt-0.5 grid size-[19px] shrink-0 place-items-center rounded-full border transition ${
+                            task.status === "done"
+                              ? "border-[#55a276] bg-[#55a276] text-white"
+                              : task.status === "progress"
+                                ? "border-[#dda04f] bg-[#fff7e7]"
+                                : "border-[#cac9c4] bg-white"
+                          }`}
+                        >
+                          {task.status === "done" ? (
+                            <Check size={12} strokeWidth={3} />
+                          ) : task.status === "progress" ? (
+                            <Clock3 size={11} className="text-[#c48431]" />
+                          ) : null}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span
+                            className={`block text-[13px] ${
+                              task.status === "done"
+                                ? "text-[#999893] line-through"
+                                : "text-[#484844]"
+                            }`}
+                          >
+                            {task.title}
+                          </span>
+                          {task.description ? (
+                            <span className="mt-1 block text-[11px] leading-4 text-[#8f8e89]">
+                              {task.description}
+                            </span>
+                          ) : null}
+                          {task.screenshotUrl ? (
+                            <a
+                              className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-[#6553c6] hover:underline"
+                              href={task.screenshotUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              <ExternalLink size={11} /> Open screenshots
+                            </a>
+                          ) : null}
+                        </span>
+                        <select
+                          aria-label={`Change status for ${task.title}`}
+                          className={`rounded-lg border-0 px-2.5 py-1.5 text-[10px] font-semibold outline-none ${statusStyle[task.status].className}`}
+                          value={task.status}
+                          onChange={(event) =>
+                            setTaskStatus(
+                              project.id,
+                              task.id,
+                              event.target.value as Status,
+                            )
+                          }
+                        >
+                          <option value="todo">Not started</option>
+                          <option value="progress">In progress</option>
+                          <option value="done">Done</option>
+                        </select>
+                        <TaskActions
+                          task={task}
+                          onUpdate={(updates) =>
+                            updateTask(project.id, task.id, updates)
+                          }
+                          onDelete={() => removeTask(project.id, task.id)}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    className="flex w-full items-center gap-2 border-t border-[#eeede9] px-5 py-3 text-[12px] font-semibold text-[#8a8984] hover:bg-[#fafaf8] hover:text-[#5f4db9]"
+                    onClick={() => openTaskComposer(project.id)}
+                  >
+                    <Plus size={14} /> Add a task
+                  </button>
+                </section>
+              ))}
+            </div>
+
+            <aside className="space-y-5">
+              <section className="rounded-2xl border border-[#e6e5e0] bg-white p-5">
+                <div className="flex items-center justify-between">
+                  <h2 className="flex items-center gap-2 text-[13px] font-bold">
+                    <Check size={15} className="text-[#4c9a70]" />
+                    Personal todos
+                  </h2>
+                  <button
+                    aria-label="Add todo"
+                    className="rounded-lg p-1.5 text-[#777771] hover:bg-[#f3f3f0]"
+                    onClick={() => setTodoComposerOpen(true)}
+                  >
+                    <Plus size={15} />
+                  </button>
+                </div>
+                <div className="mt-4 space-y-2">
+                  {todos.length ? (
+                    todos.map((todo) => (
+                      <div
+                        key={todo.id}
+                        className="group flex items-start gap-2 rounded-xl border border-[#ecebe7] p-3"
+                      >
+                        <button
+                          aria-label={
+                            todo.completed ? "Mark todo pending" : "Complete todo"
+                          }
+                          className={`mt-0.5 grid size-4 shrink-0 place-items-center rounded-full border ${
+                            todo.completed
+                              ? "border-[#55a276] bg-[#55a276] text-white"
+                              : "border-[#c8c7c2]"
+                          }`}
+                          onClick={() => void toggleTodo(todo)}
+                        >
+                          {todo.completed ? <Check size={10} strokeWidth={3} /> : null}
+                        </button>
+                        <div className="min-w-0 flex-1">
+                          <p
+                            className={`text-[11px] leading-4 ${
+                              todo.completed
+                                ? "text-[#999893] line-through"
+                                : "text-[#565550]"
+                            }`}
+                          >
+                            {todo.title}
+                          </p>
+                          {todo.reminderAt ? (
+                            <p className="mt-1 flex items-center gap-1 text-[9px] text-[#9a9994]">
+                              <Bell size={9} />
+                              {todo.reminderSentAt
+                                ? "Reminder sent"
+                                : new Intl.DateTimeFormat(undefined, {
+                                    month: "short",
+                                    day: "numeric",
+                                    hour: "numeric",
+                                    minute: "2-digit",
+                                  }).format(new Date(todo.reminderAt))}
+                            </p>
+                          ) : null}
+                        </div>
+                        <button
+                          aria-label="Delete todo"
+                          className="p-1 text-[#aaa9a4] opacity-0 hover:text-[#c45d5d] group-hover:opacity-100"
+                          onClick={() => void deleteTodo(todo.id)}
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-[11px] leading-4 text-[#8f8e89]">
+                      No personal todos. Add one with an optional reminder.
+                    </p>
+                  )}
+                </div>
+                <button
+                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border border-[#e2e1dc] py-2.5 text-[11px] font-semibold hover:bg-[#f8f8f6]"
+                  onClick={() => setTodoComposerOpen(true)}
+                >
+                  <Plus size={13} /> Add todo
+                </button>
+              </section>
+
+              <section className="rounded-2xl border border-[#e6e5e0] bg-white p-5">
+                <div className="flex items-center justify-between">
+                  <h2 className="flex items-center gap-2 text-[13px] font-bold">
+                    <MessageSquareText size={15} className="text-[#7664d7]" />
+                    Latest client message
+                  </h2>
+                  <button className="text-[11px] font-semibold text-[#7967d2]">
+                    View all
+                  </button>
+                </div>
+                {latestMessage ? (
+                  <div className="mt-4 rounded-xl bg-[#f7f6fb] p-4">
+                    <p className="text-[11px] font-bold">
+                      {latestMessage.message.sender}
+                    </p>
+                    <p className="text-[9px] text-[#9c9b96]">
+                      {latestMessage.projectName}
+                    </p>
+                    <p className="mt-3 whitespace-pre-wrap text-[12px] leading-5 text-[#686762]">
+                      {latestMessage.message.content}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="mt-4 rounded-xl bg-[#f7f6fb] p-4 text-[12px] leading-5 text-[#8f8e89]">
+                    Paste a client request so you never lose track of what was
+                    asked.
+                  </p>
+                )}
+                <button
+                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-[#e2e1dc] py-2.5 text-[11px] font-semibold text-[#666560] hover:bg-[#f8f8f6]"
+                  onClick={() => openMessageComposer("client")}
+                >
+                  <Plus size={13} /> Save client message
+                </button>
+              </section>
+
+              <section className="rounded-2xl border border-[#e6e5e0] bg-white p-5">
+                <div className="flex items-center justify-between">
+                  <h2 className="flex items-center gap-2 text-[13px] font-bold">
+                    <Send size={14} className="text-[#df9145]" />
+                    Message queue
+                  </h2>
+                  <span className="rounded-full bg-[#fff0de] px-2 py-0.5 text-[9px] font-bold text-[#a5672c]">
+                    {queuedMessages.length} waiting
+                  </span>
+                </div>
+                <div className="mt-4 space-y-3">
+                  {queuedMessages.length ? (
+                    queuedMessages.map((item) => (
+                      <QueueItem
+                        key={item.message.id}
+                        project={item.projectName}
+                        text={item.message.content}
+                        status={item.message.status}
+                        color={item.color}
+                      />
+                    ))
+                  ) : (
+                    <p className="text-[11px] leading-4 text-[#8f8e89]">
+                      Nothing queued yet.
+                    </p>
+                  )}
+                </div>
+                <button
+                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-[#2f2e2c] py-2.5 text-[11px] font-semibold text-white hover:bg-black"
+                  onClick={() => openMessageComposer("queued")}
+                >
+                  <Plus size={13} /> Queue a message
+                </button>
+              </section>
+
+              <PwaControls />
+
+              <section className="rounded-2xl bg-[#2f2e2c] p-5 text-white">
+                <div className="flex items-center justify-between">
+                  <h2 className="flex items-center gap-2 text-[13px] font-bold">
+                    <FileText size={14} className="text-[#c5b9ff]" />
+                    End of day
+                  </h2>
+                  <span className="text-[10px] text-white/45">Not started</span>
+                </div>
+                <p className="mt-3 text-[11px] leading-5 text-white/60">
+                  Capture what you completed, blockers, and what comes next.
+                </p>
+                <button
+                  className="mt-4 w-full rounded-lg bg-white py-2.5 text-[11px] font-bold text-[#343331] hover:bg-[#f3f1ff]"
+                  onClick={() => setEodOpen(true)}
+                >
+                  Write today&apos;s EOD
+                </button>
+              </section>
+            </aside>
+          </div>
+        </main>
+      </div>
+
+      {todoComposerOpen && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4 backdrop-blur-[2px]">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+            <div className="flex items-start justify-between">
+              <div>
+                <h2 className="text-base font-bold">Add a personal todo</h2>
+                <p className="mt-1 text-xs text-[#8c8b86]">
+                  Set a time to receive an email if it is still pending.
+                </p>
+              </div>
+              <button
+                aria-label="Close"
+                className="rounded-lg p-2 text-[#888782] hover:bg-[#f3f3f0]"
+                onClick={() => setTodoComposerOpen(false)}
+              >
+                <X size={17} />
+              </button>
+            </div>
+            <input
+              autoFocus
+              className="mt-5 w-full rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none focus:border-[#8a79dc]"
+              placeholder="What do you need to remember?"
+              value={newTodo}
+              onChange={(event) => setNewTodo(event.target.value)}
+            />
+            <label className="mt-4 block text-xs font-bold text-[#62615d]">
+              Reminder (optional)
+            </label>
+            <input
+              className="mt-2 w-full rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none focus:border-[#8a79dc]"
+              type="datetime-local"
+              value={newTodoReminder}
+              onChange={(event) => setNewTodoReminder(event.target.value)}
+            />
+            <p className="mt-2 text-[10px] leading-4 text-[#999893]">
+              You&apos;ll get a push notification if the todo is still pending.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                className="rounded-lg px-4 py-2 text-xs font-semibold text-[#6e6d68] hover:bg-[#f3f3f0]"
+                onClick={() => setTodoComposerOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-lg bg-[#6d5bd0] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                disabled={!newTodo.trim()}
+                onClick={() => void addTodo()}
+              >
+                Add todo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {composerOpen && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4 backdrop-blur-[2px]">
+          <div className="w-full max-w-md rounded-2xl border border-white/20 bg-white p-5 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-bold">Add a task</h2>
+                <p className="mt-1 text-xs text-[#8c8b86]">
+                  {projects.find((project) => project.id === taskProjectId)?.name ??
+                    "Select a project"}{" "}
+                  · Today
+                </p>
+              </div>
+              <button
+                aria-label="Close"
+                className="rounded-lg p-2 text-[#888782] hover:bg-[#f3f3f0]"
+                onClick={() => setComposerOpen(false)}
+              >
+                <X size={17} />
+              </button>
+            </div>
+            {projects.length > 1 && (
+              <select
+                className="mt-4 w-full rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none"
+                value={taskProjectId}
+                onChange={(event) => setTaskProjectId(event.target.value)}
+              >
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            <input
+              autoFocus
+              className="mt-3 w-full rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none transition focus:border-[#8a79dc] focus:ring-3 focus:ring-[#8a79dc]/10"
+              placeholder="What needs to be done?"
+              value={newTask}
+              onChange={(event) => setNewTask(event.target.value)}
+            />
+            <textarea
+              className="mt-3 min-h-[90px] w-full resize-y rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none transition focus:border-[#8a79dc] focus:ring-3 focus:ring-[#8a79dc]/10"
+              placeholder="Add a description (optional)"
+              value={newTaskDescription}
+              onChange={(event) => setNewTaskDescription(event.target.value)}
+            ></textarea>
+            <input
+              className="mt-3 w-full rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none transition focus:border-[#8a79dc]"
+              placeholder="Google Drive screenshots link (optional)"
+              type="url"
+              value={newTaskScreenshotUrl}
+              onChange={(event) => setNewTaskScreenshotUrl(event.target.value)}
+            />
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                className="rounded-lg px-4 py-2 text-xs font-semibold text-[#6e6d68] hover:bg-[#f3f3f0]"
+                onClick={() => setComposerOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-lg bg-[#6d5bd0] px-4 py-2 text-xs font-semibold text-white hover:bg-[#5d4dbb]"
+                onClick={() => void addTask()}
+              >
+                Add task
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {projectComposerOpen && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4 backdrop-blur-[2px]">
+          <div className="w-full max-w-md rounded-2xl border border-white/20 bg-white p-5 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-bold">Add a project</h2>
+                <p className="mt-1 text-xs text-[#8c8b86]">
+                  Track daily work for a client or product
+                </p>
+              </div>
+              <button
+                aria-label="Close"
+                className="rounded-lg p-2 text-[#888782] hover:bg-[#f3f3f0]"
+                onClick={() => setProjectComposerOpen(false)}
+              >
+                <X size={17} />
+              </button>
+            </div>
+            <input
+              autoFocus
+              className="mt-5 w-full rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none transition focus:border-[#8a79dc] focus:ring-3 focus:ring-[#8a79dc]/10"
+              placeholder="Project name"
+              value={newProjectName}
+              onChange={(event) => setNewProjectName(event.target.value)}
+              onKeyDown={(event) => event.key === "Enter" && void addProject()}
+            />
+            <input
+              className="mt-3 w-full rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none transition focus:border-[#8a79dc] focus:ring-3 focus:ring-[#8a79dc]/10"
+              placeholder="Client name (optional)"
+              value={newProjectClient}
+              onChange={(event) => setNewProjectClient(event.target.value)}
+              onKeyDown={(event) => event.key === "Enter" && void addProject()}
+            />
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                className="rounded-lg px-4 py-2 text-xs font-semibold text-[#6e6d68] hover:bg-[#f3f3f0]"
+                onClick={() => setProjectComposerOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-lg bg-[#6d5bd0] px-4 py-2 text-xs font-semibold text-white hover:bg-[#5d4dbb]"
+                onClick={() => void addProject()}
+              >
+                Add project
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {renameProjectId && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4 backdrop-blur-[2px]">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+            <div className="flex items-start justify-between">
+              <div>
+                <h2 className="text-base font-bold">Rename project</h2>
+                <p className="mt-1 text-xs text-[#8c8b86]">
+                  Update the project or client name
+                </p>
+              </div>
+              <button
+                aria-label="Close"
+                className="rounded-lg p-2 text-[#888782] hover:bg-[#f3f3f0]"
+                onClick={() => setRenameProjectId("")}
+              >
+                <X size={17} />
+              </button>
+            </div>
+            <input
+              autoFocus
+              className="mt-5 w-full rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none focus:border-[#8a79dc]"
+              placeholder="Project name"
+              value={editProjectName}
+              onChange={(event) => setEditProjectName(event.target.value)}
+            />
+            <input
+              className="mt-3 w-full rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none focus:border-[#8a79dc]"
+              placeholder="Client name (optional)"
+              value={editProjectClient}
+              onChange={(event) => setEditProjectClient(event.target.value)}
+            />
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                className="rounded-lg px-4 py-2 text-xs font-semibold text-[#6e6d68] hover:bg-[#f3f3f0]"
+                onClick={() => setRenameProjectId("")}
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-lg bg-[#6d5bd0] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                disabled={!editProjectName.trim()}
+                onClick={() => void saveRenameProject()}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {messageComposer && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4 backdrop-blur-[2px]">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+            <div className="flex items-start justify-between">
+              <div>
+                <h2 className="text-base font-bold">
+                  {messageComposer === "client"
+                    ? "Save client message"
+                    : "Queue a message"}
+                </h2>
+                <p className="mt-1 text-xs text-[#8c8b86]">
+                  {messageComposer === "client"
+                    ? "Paste what the client asked for."
+                    : "Draft a reply to send later."}
+                </p>
+              </div>
+              <button
+                aria-label="Close"
+                className="rounded-lg p-2 text-[#888782] hover:bg-[#f3f3f0]"
+                onClick={() => setMessageComposer(null)}
+              >
+                <X size={17} />
+              </button>
+            </div>
+            <select
+              aria-label="Project"
+              className="mt-5 w-full rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none"
+              value={messageProjectId}
+              onChange={(event) => setMessageProjectId(event.target.value)}
+            >
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
+            {messageComposer === "client" && (
+              <input
+                className="mt-3 w-full rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none focus:border-[#8a79dc]"
+                placeholder="Who sent it? (optional)"
+                value={messageSender}
+                onChange={(event) => setMessageSender(event.target.value)}
+              />
+            )}
+            <textarea
+              autoFocus
+              className="mt-3 min-h-32 w-full resize-y rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none focus:border-[#8a79dc]"
+              placeholder={
+                messageComposer === "client"
+                  ? "Paste the client message…"
+                  : "Write the message you want to send…"
+              }
+              value={messageContent}
+              onChange={(event) => setMessageContent(event.target.value)}
+            ></textarea>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                className="rounded-lg px-4 py-2 text-xs font-semibold text-[#6e6d68] hover:bg-[#f3f3f0]"
+                onClick={() => setMessageComposer(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-lg bg-[#6d5bd0] px-4 py-2 text-xs font-semibold text-white hover:bg-[#5d4dbb] disabled:opacity-50"
+                disabled={!messageContent.trim()}
+                onClick={() => void saveMessage()}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {eodOpen ? <EodModal onClose={() => setEodOpen(false)} /> : null}
+    </div>
+  );
+}
+
+function SidebarItem({
+  icon,
+  label,
+  active = false,
+  badge,
+}: {
+  icon: ReactNode;
+  label: string;
+  active?: boolean;
+  badge?: string;
+}) {
+  return (
+    <button
+      className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition ${
+        active
+          ? "bg-[#eeecfa] font-semibold text-[#5e4db7]"
+          : "text-[#666560] hover:bg-[#f0f0ed]"
+      }`}
+    >
+      {icon}
+      <span className="flex-1">{label}</span>
+      {badge && (
+        <span className="grid size-5 place-items-center rounded-full bg-[#e4dffc] text-[9px] font-bold text-[#5f4db9]">
+          {badge}
+        </span>
+      )}
+    </button>
+  );
+}
+
+function Stat({ value, label, color }: { value: number; label: string; color: string }) {
+  return (
+    <div>
+      <div className="flex items-center gap-1.5">
+        <Circle size={7} fill={color} strokeWidth={0} />
+        <span className="text-lg font-bold tracking-[-0.03em]">{value}</span>
+      </div>
+      <p className="text-[9px] font-semibold uppercase tracking-wider text-[#9b9a95]">
+        {label}
+      </p>
+    </div>
+  );
+}
+
+function QueueItem({
+  project,
+  text,
+  status,
+  color,
+}: {
+  project: string;
+  text: string;
+  status: string;
+  color: string;
+}) {
+  return (
+    <div className="border-b border-[#efeee9] pb-3 last:border-0 last:pb-0">
+      <div className="flex items-center gap-1.5">
+        <span className="size-1.5 rounded-full" style={{ background: color }} />
+        <p className="text-[9px] font-bold uppercase tracking-wider text-[#9a9994]">
+          {project}
+        </p>
+      </div>
+      <p className="mt-1.5 whitespace-pre-wrap text-[11px] font-medium leading-4 text-[#565550]">
+        {text}
+      </p>
+      <p className="mt-1.5 flex items-center gap-1 text-[9px] uppercase text-[#aaa9a4]">
+        <Clock3 size={9} /> {status}
+      </p>
     </div>
   );
 }

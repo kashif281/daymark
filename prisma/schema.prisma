@@ -1,0 +1,179 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ProjectStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+}
+
+enum TaskStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  DONE
+}
+
+enum MessageStatus {
+  DRAFT
+  READY
+  SENT
+}
+
+model User {
+  id                String             @id
+  email             String             @unique
+  name              String?
+  projects          Project[]
+  taskComments      TaskComment[]
+  todos             Todo[]
+  pushSubscriptions PushSubscription[]
+  eodEntries        EodEntry[]
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+}
+
+model Todo {
+  id                      String   @id @default(cuid())
+  userId                  String
+  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title                   String
+  completed               Boolean  @default(false)
+  reminderAt              DateTime?
+  reminderClaimedAt       DateTime?
+  reminderSentAt          DateTime?
+  emailReminderSentAt     DateTime?
+  pushReminderSentAt      DateTime?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@index([userId, completed])
+  @@index([reminderAt, completed, reminderSentAt])
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model Project {
+  id             String            @id @default(cuid())
+  userId         String
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name           String
+  clientName     String?
+  color          String            @default("#7c3aed")
+  status         ProjectStatus     @default(ACTIVE)
+  tasks          Task[]
+  clientMessages ClientMessage[]
+  queuedMessages QueuedMessage[]
+  eodEntries     ProjectEodEntry[]
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@index([userId])
+  @@index([userId, status])
+}
+
+model Task {
+  id            String     @id @default(cuid())
+  projectId     String
+  project       Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?
+  screenshotUrl String?
+  workDate      DateTime   @db.Date
+  status        TaskStatus @default(NOT_STARTED)
+  sortOrder     Int        @default(0)
+  comments      TaskComment[]
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@index([projectId, workDate])
+}
+
+model TaskComment {
+  id        String   @id @default(cuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([taskId, createdAt])
+  @@index([userId])
+}
+
+model ClientMessage {
+  id         String   @id @default(cuid())
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  content    String
+  senderName String?
+  receivedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  @@index([projectId, receivedAt])
+}
+
+model QueuedMessage {
+  id          String        @id @default(cuid())
+  projectId   String
+  project     Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  content     String
+  status      MessageStatus @default(DRAFT)
+  scheduledAt DateTime?
+  sentAt      DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([projectId, status])
+}
+
+model EodEntry {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entryDate DateTime @db.Date
+  summary   String
+  blockers  String?
+  tomorrow  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, entryDate])
+}
+
+model ProjectEodEntry {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  entryDate DateTime @db.Date
+  summary   String
+  blockers  String?
+  tomorrow  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([projectId, entryDate])
+}

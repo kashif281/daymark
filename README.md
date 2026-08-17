@@ -1,36 +1,53 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Daymark
 
-## Getting Started
+A multi-user daily project desk built with Next.js, Clerk, Prisma, and PostgreSQL.
 
-First, run the development server:
+## Local setup
+
+1. Create a Clerk application and copy its publishable and secret keys.
+2. Create a PostgreSQL service on Railway and copy its public connection URL.
+3. Copy the environment template and fill in the values:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.example .env
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+4. Create the database tables and run the app:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npx prisma migrate dev --name init
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Open [http://localhost:3000](http://localhost:3000). Clerk protects application and API routes. Each database query is scoped to the authenticated Clerk user.
 
-## Learn More
+The dashboard requires Clerk and PostgreSQL configuration. It does not display sample account data when these services are missing.
 
-To learn more about Next.js, take a look at the following resources:
+## Railway deployment
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. Add this repository as a Railway service.
+2. Add a PostgreSQL service to the same project.
+3. Set all variables from `.env.example` in the web service.
+4. Use `npm run build` as the build command and `npm run start` as the start command.
+5. Run `npx prisma migrate deploy` against the production database.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Todo push reminders
 
-## Deploy on Vercel
+1. Run `npm run push:keys` once and copy the VAPID variables to Railway.
+2. Set the VAPID variables, `CRON_SECRET`, and the public `APP_URL`.
+3. Add a Railway worker service from the same repository with `npm run reminders:watch` as its start command. It checks every 30 seconds by default.
+4. In the app, click **Enable notifications** (on iPhone, install via Share → Add to Home Screen first).
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Email reminders via Resend remain optional and are disabled unless `REMINDER_EMAIL_ENABLED=true` and a verified Resend domain are configured.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The worker calls the protected reminder endpoint, which only processes todos that are still pending. Push delivery is tracked per todo to prevent duplicate reminders.
+
+Daymark includes a web app manifest and service worker. Android users can install it from the browser install prompt. On iPhone, use Safari’s Share → Add to Home Screen; iOS web push permission can only be requested from the installed Home Screen app.
+
+## Current data flow
+
+- Clerk authenticates and identifies each user.
+- The first authenticated request syncs that user into PostgreSQL.
+- A starter project is created for new accounts.
+- Today’s tasks load from PostgreSQL and status changes persist through authenticated API routes.
+- Personal todos and their reminder status are stored per user in PostgreSQL.
