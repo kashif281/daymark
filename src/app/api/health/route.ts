@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
 import { requireAppUser } from "@/lib/current-app-user";
 import { getDb } from "@/lib/db";
-import { dateKey, handleHealthError, parseDateInput, toUiCheckIn, utcDate } from "@/lib/health";
+import {
+  calendarWeekKeys,
+  dateKey,
+  handleHealthError,
+  parseDateInput,
+  toUiCheckIn,
+  utcDate,
+} from "@/lib/health";
 
 function streakCount(doneDates: Set<string>, todayKey: string) {
   let streak = 0;
@@ -88,7 +95,7 @@ export async function GET(request: Request) {
           routine.logs.filter((log) => log.completed).map((log) => dateKey(log.logDate)),
         );
         const today = logsByDate.get(todayKey) ?? null;
-        const weekKeys = days.slice(-7).map(dateKey);
+        const weekKeys = calendarWeekKeys(todayKey);
 
         return {
           id: routine.id,

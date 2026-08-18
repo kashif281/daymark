@@ -40,6 +40,11 @@ enum HealthRoutineKind {
   OTHER
 }
 
+enum MoneyDirection {
+  GIVEN
+  OWED
+}
+
 model User {
   id                String             @id
   email             String             @unique
@@ -56,6 +61,10 @@ model User {
   healthCheckIns      HealthCheckIn[]
   healthSymptoms      HealthSymptom[]
   healthMedications   HealthMedication[]
+  healthJourneyInsights HealthJourneyInsight[]
+  spendEntries        SpendEntry[]
+  moneyLoans          MoneyLoan[]
+  monthlyBudgets      MonthlyBudget[]
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
 }
@@ -308,6 +317,67 @@ model HealthMedicationLog {
   updatedAt     DateTime         @updatedAt
 
   @@unique([medicationId, logDate])
+}
+
+model HealthJourneyInsight {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  logDate      DateTime @db.Date
+  headline     String
+  comparison   String
+  direction    String
+  attention    String
+  suggestions  Json
+  changed      Json?
+  helping      String?
+  hurting      String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, logDate])
+  @@index([userId, createdAt])
+}
+
+model SpendEntry {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  spentAt   DateTime @db.Date
+  name      String
+  amount    Float
+  category  String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, spentAt])
+}
+
+model MoneyLoan {
+  id          String         @id @default(cuid())
+  userId      String
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  direction   MoneyDirection
+  personName  String
+  amount      Float
+  note        String?
+  settled     Boolean        @default(false)
+  loggedAt    DateTime       @db.Date
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([userId, direction, settled])
+}
+
+model MonthlyBudget {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  month     DateTime @db.Date
+  amount    Float
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, month])
 }
 
 model ProjectEodEntry {

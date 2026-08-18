@@ -16,6 +16,17 @@ export function parseDateInput(value?: string | null) {
   return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
 }
 
+export function calendarWeekKeys(todayKey: string) {
+  const today = parseDateInput(todayKey);
+  if (!today) return [];
+  const mondayOffset = today.getUTCDay() === 0 ? -6 : 1 - today.getUTCDay();
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(today);
+    date.setUTCDate(today.getUTCDate() + mondayOffset + index);
+    return dateKey(date);
+  });
+}
+
 export function optionalNumber(value: unknown, min?: number, max?: number) {
   if (value === "" || value === null || value === undefined) return null;
   const parsed = Number(value);

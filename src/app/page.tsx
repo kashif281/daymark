@@ -26,6 +26,7 @@ import {
   Sparkles,
   Trash2,
   TrendingUp,
+  Wallet,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
@@ -36,10 +37,11 @@ import { PwaControls } from "@/components/pwa-controls";
 import { ClientMessageCard } from "@/components/client-message-card";
 import { TaskActions } from "@/components/task-actions";
 import { HealthView } from "@/components/health-view";
+import { SpendingView } from "@/components/spending-view";
 import { TrendChart } from "@/components/trend-chart";
 
 type Status = "todo" | "progress" | "done";
-type View = "today" | "timeline" | "queue" | "messages" | "eod" | "progress" | "health" | "archive" | "settings";
+type View = "today" | "timeline" | "queue" | "messages" | "eod" | "progress" | "health" | "spending" | "archive" | "settings";
 type ArchivedProject = {
   id: string;
   name: string;
@@ -285,6 +287,7 @@ export default function Home() {
     eod: "EOD entries",
     progress: "Progress",
     health: "Health",
+    spending: "Spending",
     archive: "Archive",
     settings: "Settings",
   };
@@ -952,6 +955,12 @@ export default function Home() {
               label="Health"
               active={view === "health"}
               onClick={() => openView("health")}
+            />
+            <SidebarItem
+              icon={<Wallet size={17} />}
+              label="Spending"
+              active={view === "spending"}
+              onClick={() => openView("spending")}
             />
             <SidebarItem
               icon={<Inbox size={17} />}
@@ -1776,6 +1785,7 @@ export default function Home() {
           )}
 
           {view === "health" && <HealthView />}
+          {view === "spending" && <SpendingView />}
 
           {view === "archive" && (
             <section className="rounded-2xl border border-[#e6e5e0] bg-white p-5">

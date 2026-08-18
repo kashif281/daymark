@@ -11,13 +11,14 @@ import {
   Moon,
   Pill,
   Plus,
+  RotateCcw,
   Sparkles,
   Stethoscope,
-  Thermometer,
   Trash2,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { calendarWeekKeys } from "@/lib/health";
 
 export type HealthKind =
   | "WALK"
@@ -87,6 +88,20 @@ type HealthSymptom = {
   notes: string | null;
 };
 
+type HealthInsight = {
+  configured: boolean;
+  headline: string;
+  comparison: string;
+  suggestions: string[];
+  attention: "none" | "watch" | "urgent";
+  direction?: "right" | "wrong" | "improving" | "declining" | "unchanged";
+  changed?: string[];
+  helping?: string | null;
+  hurting?: string | null;
+};
+
+type CheckInDay = HealthCheckIn & { date: string };
+
 type HealthMedication = {
   id: string;
   name: string;
@@ -105,17 +120,39 @@ const starters: { kind: HealthKind; title: string; target: string }[] = [
 
 const symptomChips = ["Headache", "Fatigue", "Pain", "Nausea", "Dizziness", "Anxiety", "Cough"];
 
+const vitalOptions = [
+  { key: "weightKg", label: "Weight (kg)" },
+  { key: "systolic", label: "Systolic BP" },
+  { key: "diastolic", label: "Diastolic BP" },
+  { key: "heartRate", label: "Heart rate" },
+  { key: "bloodSugar", label: "Blood sugar" },
+  { key: "temperature", label: "Temperature °C" },
+] as const;
+
+type VitalKey = (typeof vitalOptions)[number]["key"];
+
 function localDateInput(value?: Date) {
   const now = value ?? new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
-function formatDate(value: string, weekday = false) {
+const weekdayLetters = ["M", "T", "W", "T", "F", "S", "S"];
+
+function dateKeyFromIso(value: string) {
+  return value.slice(0, 10);
+}
+
+function formatLocalDay(key: string, weekday = false) {
+  const [year, month, day] = key.split("-").map(Number);
   return new Intl.DateTimeFormat(undefined, {
     weekday: weekday ? "short" : undefined,
     month: "short",
     day: "numeric",
-  }).format(new Date(value));
+  }).format(new Date(year, month - 1, day));
+}
+
+function formatDate(value: string, weekday = false) {
+  return formatLocalDay(dateKeyFromIso(value), weekday);
 }
 
 function kindMeta(kind: HealthKind) {
@@ -168,6 +205,9 @@ export function HealthView() {
   const [prescriptions, setPrescriptions] = useState<HealthPrescription[]>([]);
   const [symptoms, setSymptoms] = useState<HealthSymptom[]>([]);
   const [medications, setMedications] = useState<HealthMedication[]>([]);
+  const [checkIns, setCheckIns] = useState<CheckInDay[]>([]);
+  const [insight, setInsight] = useState<HealthInsight | null>(null);
+  const [insightLoading, setInsightLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [routineOpen, setRoutineOpen] = useState(false);
@@ -176,6 +216,8 @@ export function HealthView() {
   const [selected, setSelected] = useState<HealthPrescription | null>(null);
   const [symptomName, setSymptomName] = useState("");
   const [symptomSeverity, setSymptomSeverity] = useState(5);
+  const [vitalKind, setVitalKind] = useState<VitalKey>("weightKg");
+  const [vitalValue, setVitalValue] = useState("");
 
   const load = useCallback(async () => {
     const response = await fetch(`/api/health?date=${localDateInput()}`);
@@ -184,16 +226,31 @@ export function HealthView() {
     }
     const data = (await response.json()) as {
       checkIn: HealthCheckIn;
+      checkIns: CheckInDay[];
       routines: HealthRoutine[];
       prescriptions: HealthPrescription[];
       symptoms: HealthSymptom[];
       medications: HealthMedication[];
     };
     setCheckIn(data.checkIn);
+    setCheckIns(data.checkIns ?? []);
     setRoutines(data.routines);
     setPrescriptions(data.prescriptions);
     setSymptoms(data.symptoms);
     setMedications(data.medications);
+  }, []);
+
+  const loadInsight = useCallback(async () => {
+    setInsightLoading(true);
+    try {
+      const response = await fetch(`/api/health/insights?date=${localDateInput()}`);
+      if (!response.ok) throw new Error("Could not load insights");
+      setInsight((await response.json()) as HealthInsight);
+    } catch {
+      setInsight(null);
+    } finally {
+      setInsightLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -201,6 +258,14 @@ export function HealthView() {
       .catch(() => setError("Could not load health tracking."))
       .finally(() => setLoading(false));
   }, [load]);
+
+  useEffect(() => {
+    if (loading) return;
+    const timer = window.setTimeout(() => {
+      void loadInsight();
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  }, [loading, checkIn, routines, symptoms, medications, loadInsight]);
 
   async function saveCheckIn(patch: Partial<HealthCheckIn>) {
     const response = await fetch("/api/health/check-in", {
@@ -220,16 +285,21 @@ export function HealthView() {
     if (response.ok) await load();
   }
 
-  async function toggleRoutine(routine: HealthRoutine) {
+  async function toggleRoutine(routine: HealthRoutine, date = localDateInput()) {
+    const todayKey = localDateInput();
+    const day =
+      date === todayKey
+        ? routine.today
+        : routine.days.find((item) => dateKeyFromIso(item.date) === date);
     const response = await fetch("/api/health/logs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         routineId: routine.id,
-        completed: !routine.today?.completed,
-        amount: routine.today?.amount,
-        notes: routine.today?.notes,
-        date: localDateInput(),
+        completed: !(day?.completed ?? false),
+        amount: day?.amount,
+        notes: day?.notes,
+        date,
       }),
     });
     if (response.ok) await load();
@@ -304,8 +374,24 @@ export function HealthView() {
     if (response.ok) await load();
   }
 
+  async function addVital() {
+    if (vitalValue === "") return;
+    const parsed = Number(vitalValue);
+    if (!Number.isFinite(parsed)) return;
+    await saveCheckIn({ [vitalKind]: parsed });
+    setVitalValue("");
+  }
+
+  async function removeVital(key: VitalKey) {
+    await saveCheckIn({ [key]: null });
+  }
+
   const doneToday = routines.filter((routine) => routine.today?.completed).length;
   const medsTaken = medications.filter((item) => item.taken).length;
+  const yesterday = checkIns.length >= 2 ? checkIns[checkIns.length - 2] : null;
+  const unusedStarters = starters.filter(
+    (starter) => !routines.some((routine) => routine.kind === starter.kind),
+  );
 
   return (
     <section className="space-y-5">
@@ -313,7 +399,7 @@ export function HealthView() {
         <div>
           <h1 className="text-2xl font-bold tracking-[-0.04em]">Health</h1>
           <p className="mt-1 text-sm text-[#777671]">
-            Daily check-in, routines, meds, symptoms, and doctor notes.
+            Daily check-in, habits, meds, symptoms, and doctor notes.
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap justify-end gap-2">
@@ -321,7 +407,7 @@ export function HealthView() {
             className="rounded-lg border border-[#deddd8] bg-white px-2.5 py-1.5 text-[11px] font-semibold"
             onClick={() => setRoutineOpen(true)}
           >
-            Add routine
+            Add habit
           </button>
           <button
             className="rounded-lg bg-[#292927] px-2.5 py-1.5 text-[11px] font-semibold text-white"
@@ -334,6 +420,107 @@ export function HealthView() {
 
       {error ? <p className="text-sm text-[#a7463d]">{error}</p> : null}
       {loading ? <p className="text-sm text-[#8f8e89]">Loading health…</p> : null}
+
+      <div className="rounded-2xl border border-[#e6e5e0] bg-white p-5">
+        <div className="flex items-start justify-between gap-2">
+          <h2 className="flex items-center gap-2 text-[13px] font-bold">
+            <Sparkles size={15} className="text-[#6d5bd0]" />
+            Health journey
+          </h2>
+          <button
+            className="inline-flex items-center gap-1 rounded-lg border border-[#deddd8] px-2.5 py-1.5 text-[11px] font-semibold disabled:opacity-50"
+            disabled={insightLoading}
+            onClick={() => void loadInsight()}
+          >
+            <RotateCcw size={12} />
+            {insightLoading ? "Checking…" : "Retry"}
+          </button>
+        </div>
+        {insight?.direction || (insight?.attention && insight.attention !== "none") ? (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {insight.direction ? (
+              <span
+                className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                  insight.direction === "right" || insight.direction === "improving"
+                    ? "bg-[#e7f4ec] text-[#367653]"
+                    : insight.direction === "wrong" || insight.direction === "declining"
+                      ? "bg-[#f8e4e1] text-[#a7463d]"
+                      : "bg-[#f3f3f0] text-[#6e6d68]"
+                }`}
+              >
+                {directionLabel(insight.direction)}
+              </span>
+            ) : null}
+            {insight.attention && insight.attention !== "none" ? (
+              <span
+                className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                  insight.attention === "urgent"
+                    ? "bg-[#f8e4e1] text-[#a7463d]"
+                    : "bg-[#fff4d8] text-[#8a6a1f]"
+                }`}
+              >
+                {insight.attention === "urgent" ? "Needs care" : "Keep an eye"}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+        {insight?.attention === "watch" ? (
+          <p className="mt-2 text-[11px] text-[#8a6a1f]">
+             Something is off vs other days, but not urgent.
+          </p>
+        ) : null}
+        {insight?.attention === "urgent" ? (
+          <p className="mt-2 text-[11px] text-[#a7463d]">
+            Needs care means talk to a clinician. This app is not medical advice.
+          </p>
+        ) : null}
+        {insightLoading && !insight ? (
+          <p className="mt-2 text-sm text-[#8f8e89]">Comparing your vitals…</p>
+        ) : insight ? (
+          <>
+            <p className="mt-2 text-[15px] font-semibold">{insight.headline}</p>
+            <p className="mt-1 text-[13px] leading-5 text-[#565550]">{insight.comparison}</p>
+            {insight.changed?.length ? (
+              <div className="mt-3">
+                <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#9a9994]">
+                  What changed
+                </p>
+                <ul className="mt-1 space-y-1">
+                  {insight.changed.map((item) => (
+                    <li key={item} className="text-[13px] text-[#3f3e3a]">
+                      · {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {insight.helping ? (
+              <p className="mt-2 text-[12px] text-[#367653]">Helping: {insight.helping}</p>
+            ) : null}
+            {insight.hurting ? (
+              <p className="mt-1 text-[12px] text-[#a7463d]">Hurting: {insight.hurting}</p>
+            ) : null}
+            {insight.suggestions.length ? (
+              <ul className="mt-3 space-y-1.5">
+                {insight.suggestions.map((item) => (
+                  <li key={item} className="text-[13px] text-[#3f3e3a]">
+                    · {item}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            <p className="mt-3 text-[11px] text-[#9a9994]">
+              Suggestions only. Not medical advice.
+            </p>
+          </>
+        ) : (
+          <div className="mt-2">
+            <p className="text-sm text-[#8f8e89]">
+              Log sleep, water, mood, or a habit, then tap Retry if the journey does not update.
+            </p>
+          </div>
+        )}
+      </div>
 
       <div className="grid gap-3 sm:grid-cols-4">
         <SummaryCard
@@ -469,126 +656,262 @@ export function HealthView() {
           <Activity size={15} className="text-[#6d5bd0]" />
           Vitals
         </h2>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <VitalField
-            label="Weight (kg)"
-            value={checkIn.weightKg}
-            onSave={(value) => void saveCheckIn({ weightKg: value })}
-          />
-          <VitalField
-            label="Systolic BP"
-            value={checkIn.systolic}
-            onSave={(value) => void saveCheckIn({ systolic: value })}
-          />
-          <VitalField
-            label="Diastolic BP"
-            value={checkIn.diastolic}
-            onSave={(value) => void saveCheckIn({ diastolic: value })}
-          />
-          <VitalField
-            label="Heart rate"
-            value={checkIn.heartRate}
-            onSave={(value) => void saveCheckIn({ heartRate: value })}
-          />
-          <VitalField
-            label="Blood sugar"
-            value={checkIn.bloodSugar}
-            onSave={(value) => void saveCheckIn({ bloodSugar: value })}
-          />
-          <VitalField
-            label="Temperature °C"
-            icon={<Thermometer size={12} />}
-            value={checkIn.temperature}
-            onSave={(value) => void saveCheckIn({ temperature: value })}
-          />
+        {yesterday ? (
+          <p className="mt-1 text-[12px] text-[#8f8e89]">
+            Yesterday: {yesterday.sleepHours ?? "—"}h sleep · mood {yesterday.mood ?? "—"} · energy{" "}
+            {yesterday.energy ?? "—"} · {yesterday.waterGlasses} water
+            {yesterday.systolic && yesterday.diastolic
+              ? ` · BP ${yesterday.systolic}/${yesterday.diastolic}`
+              : ""}
+          </p>
+        ) : null}
+        <div className="mt-4">
+          <div className="flex flex-wrap gap-2">
+            {vitalOptions.map((item) => (
+              <button
+                key={item.key}
+                className={`rounded-lg px-3 py-1.5 text-[12px] font-semibold ${
+                  vitalKind === item.key
+                    ? "bg-[#292927] text-white"
+                    : "border border-[#deddd8] text-[#5f5e5a]"
+                }`}
+                onClick={() => setVitalKind(item.key)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <div className="mt-3 flex gap-2">
+            <input
+              type="number"
+              step="any"
+              className="min-w-0 flex-1 rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none focus:border-[#8a79dc]"
+              placeholder={`${vitalOptions.find((item) => item.key === vitalKind)?.label} value`}
+              value={vitalValue}
+              onChange={(event) => setVitalValue(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") void addVital();
+              }}
+            />
+            <button
+              className="rounded-xl bg-[#6d5bd0] px-4 py-3 text-[12px] font-semibold text-white disabled:opacity-50"
+              disabled={vitalValue === ""}
+              onClick={() => void addVital()}
+            >
+              Add
+            </button>
+          </div>
+          {vitalOptions.some((item) => checkIn[item.key] != null) ? (
+            <div className="mt-3 space-y-2">
+              {vitalOptions
+                .filter((item) => checkIn[item.key] != null)
+                .map((item) => (
+                  <div
+                    key={item.key}
+                    className="flex items-center justify-between rounded-xl border border-[#ecebe7] px-3 py-2"
+                  >
+                    <p className="text-[12px] font-semibold">
+                      {item.label}{" "}
+                      <span className="text-[#8f8e89]">· {checkIn[item.key]}</span>
+                    </p>
+                    <button
+                      aria-label={`Remove ${item.label}`}
+                      className="text-[#aaa9a4] hover:text-[#a7463d]"
+                      onClick={() => void removeVital(item.key)}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                ))}
+            </div>
+          ) : (
+            <p className="mt-3 text-sm text-[#8f8e89]">
+              No vitals added today. Pick one, enter the value, then tap Add.
+            </p>
+          )}
         </div>
       </div>
 
       <div className="rounded-2xl border border-[#e6e5e0] bg-white p-5">
-        <h2 className="text-[13px] font-bold">Today&apos;s routine</h2>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h2 className="text-[13px] font-bold">Habits</h2>
+            <p className="mt-1 text-[12px] text-[#8f8e89]">
+              Every habit stays listed. Mark done today with the button; use the week row only to catch up missed days.
+            </p>
+          </div>
+          <button
+            className="inline-flex shrink-0 items-center gap-1 text-[12px] font-semibold text-[#6553c6]"
+            onClick={() => setRoutineOpen(true)}
+          >
+            <Plus size={13} /> Add
+          </button>
+        </div>
         {routines.length ? (
           <div className="mt-4 space-y-3">
             {routines.map((routine) => {
               const meta = kindMeta(routine.kind);
               const Icon = meta.icon;
               const done = Boolean(routine.today?.completed);
+              const todayKey = localDateInput();
+              const logsByDate = new Map(
+                routine.days.map((day) => [dateKeyFromIso(day.date), day]),
+              );
+              const week = calendarWeekKeys(todayKey).map((key, index) => {
+                const log = logsByDate.get(key);
+                return {
+                  key,
+                  index,
+                  completed: Boolean(log?.completed),
+                  isToday: key === todayKey,
+                  isFuture: key > todayKey,
+                };
+              });
               return (
-                <div key={routine.id} className="rounded-xl border border-[#ecebe7] p-3">
+                <div
+                  key={routine.id}
+                  className={`rounded-xl border p-3 ${
+                    done ? "border-[#cfe6d6] bg-[#f7fbf8]" : "border-[#ecebe7] bg-white"
+                  }`}
+                >
                   <div className="flex items-start gap-3">
-                    <button
-                      aria-label={`Mark ${routine.title} ${done ? "not done" : "done"}`}
-                      className={`mt-0.5 grid size-[19px] shrink-0 place-items-center rounded-full border ${
-                        done
-                          ? "border-[#55a276] bg-[#55a276] text-white"
-                          : "border-[#cac9c4] bg-white"
-                      }`}
-                      onClick={() => void toggleRoutine(routine)}
-                    >
-                      {done ? <Check size={12} strokeWidth={3} /> : null}
-                    </button>
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="flex items-center gap-1.5 text-[13px] font-semibold">
-                          <Icon size={14} style={{ color: meta.color }} />
-                          {routine.title}
-                        </p>
-                        <button
-                          aria-label={`Delete ${routine.title}`}
-                          className="rounded-md p-1 text-[#aaa9a4] hover:bg-[#f3f3f0] hover:text-[#a7463d]"
-                          onClick={() => void removeRoutine(routine.id)}
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
+                      <p className="flex items-center gap-1.5 text-[13px] font-semibold">
+                        <Icon size={14} style={{ color: meta.color }} />
+                        {routine.title}
+                      </p>
                       <p className="mt-0.5 text-[11px] text-[#8f8e89]">
                         {meta.label}
-                        {routine.target ? ` · target ${routine.target}` : ""}
+                        {routine.target ? ` · ${routine.target}` : ""}
                         {routine.streak ? ` · ${routine.streak}-day streak` : ""}
-                        {` · ${routine.weekDone}/7 this week`}
                       </p>
-                      <div className="mt-2 flex gap-1">
-                        {routine.days.slice(-7).map((day) => (
-                          <span
-                            key={day.date}
-                            title={formatDate(day.date, true)}
-                            className={`h-1.5 flex-1 rounded-full ${
-                              day.completed ? "bg-[#55a276]" : "bg-[#ecebe7]"
-                            }`}
-                          />
-                        ))}
-                      </div>
-                      {done ? (
-                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                          <input
-                            key={`${routine.id}-amount-${routine.today?.amount ?? ""}`}
-                            className="rounded-lg border border-[#deddd8] bg-[#fafaf8] px-3 py-2 text-[12px] outline-none focus:border-[#8a79dc]"
-                            placeholder="How much? e.g. 40 min, 8k steps"
-                            defaultValue={routine.today?.amount ?? ""}
-                            onBlur={(event) =>
-                              void saveLogDetails(routine, { amount: event.target.value })
-                            }
-                          />
-                          <input
-                            key={`${routine.id}-notes-${routine.today?.notes ?? ""}`}
-                            className="rounded-lg border border-[#deddd8] bg-[#fafaf8] px-3 py-2 text-[12px] outline-none focus:border-[#8a79dc]"
-                            placeholder="Notes"
-                            defaultValue={routine.today?.notes ?? ""}
-                            onBlur={(event) =>
-                              void saveLogDetails(routine, { notes: event.target.value })
-                            }
-                          />
-                        </div>
-                      ) : null}
+                    </div>
+                    <button
+                      aria-label={`Delete ${routine.title}`}
+                      className="rounded-md p-1 text-[#aaa9a4] hover:bg-[#f3f3f0] hover:text-[#a7463d]"
+                      onClick={() => void removeRoutine(routine.id)}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    className={`mt-3 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left ${
+                      done
+                        ? "bg-[#55a276] text-white"
+                        : "border border-[#deddd8] bg-white text-[#3f3e3a] hover:border-[#55a276]"
+                    }`}
+                    onClick={() => void toggleRoutine(routine)}
+                  >
+                    <span
+                      className={`flex size-6 shrink-0 items-center justify-center rounded-md ${
+                        done ? "bg-white/20" : "border border-[#deddd8] bg-white"
+                      }`}
+                    >
+                      {done ? <Check size={14} strokeWidth={3} /> : null}
+                    </span>
+                    <span>
+                      <span className="block text-[12px] font-semibold">
+                        {done ? "Done today" : "Mark done today"}
+                      </span>
+                      <span className={`block text-[10px] ${done ? "text-white/80" : "text-[#8f8e89]"}`}>
+                        {done ? "Tap to undo" : "Logs this habit for today"}
+                      </span>
+                    </span>
+                  </button>
+                  {done ? (
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      <input
+                        key={`${routine.id}-amount-${routine.today?.amount ?? ""}`}
+                        className="rounded-lg border border-[#deddd8] bg-white px-3 py-2 text-[12px] outline-none focus:border-[#8a79dc]"
+                        placeholder="How much? e.g. 40 min, 8k steps"
+                        defaultValue={routine.today?.amount ?? ""}
+                        onBlur={(event) =>
+                          void saveLogDetails(routine, { amount: event.target.value })
+                        }
+                      />
+                      <input
+                        key={`${routine.id}-notes-${routine.today?.notes ?? ""}`}
+                        className="rounded-lg border border-[#deddd8] bg-white px-3 py-2 text-[12px] outline-none focus:border-[#8a79dc]"
+                        placeholder="Notes"
+                        defaultValue={routine.today?.notes ?? ""}
+                        onBlur={(event) =>
+                          void saveLogDetails(routine, { notes: event.target.value })
+                        }
+                      />
+                    </div>
+                  ) : null}
+                  <div className="mt-3">
+                    <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.08em] text-[#9a9994]">
+                      <p>This week · catch up</p>
+                      <p>{routine.weekDone}/7</p>
+                    </div>
+                    <div className="mt-1.5 grid grid-cols-7 gap-1">
+                      {week.map((day) => {
+                        const label = weekdayLetters[day.index];
+                        const title = `${formatLocalDay(day.key, true)}${
+                          day.completed ? " · done" : day.isFuture ? " · upcoming" : ""
+                        }`;
+                        const className = `rounded-lg py-1.5 text-center ${
+                          day.completed
+                            ? "bg-[#55a276] text-white"
+                            : day.isToday
+                              ? "border border-[#6d5bd0] bg-white text-[#5f4db9]"
+                              : day.isFuture
+                                ? "bg-[#f7f7f4] text-[#c4c3be]"
+                                : "bg-[#f3f3f0] text-[#8f8e89]"
+                        }`;
+                        if (day.isToday || day.isFuture) {
+                          return (
+                            <div key={day.key} title={title} className={className}>
+                              <span className="block text-[10px] font-bold">{label}</span>
+                              <span className="mt-0.5 block text-[9px]">
+                                {day.isToday ? (day.completed ? "✓" : "today") : "·"}
+                              </span>
+                            </div>
+                          );
+                        }
+                        return (
+                          <button
+                            key={day.key}
+                            type="button"
+                            title={`${title}. Tap to ${day.completed ? "undo" : "mark done"}.`}
+                            className={className}
+                            onClick={() => void toggleRoutine(routine, day.key)}
+                          >
+                            <span className="block text-[10px] font-bold">{label}</span>
+                            <span className="mt-0.5 block text-[9px]">
+                              {day.completed ? "✓" : "·"}
+                            </span>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
               );
             })}
+            {unusedStarters.length ? (
+              <div className="rounded-xl border border-dashed border-[#deddd8] px-3 py-3">
+                <p className="text-[11px] font-semibold text-[#8f8e89]">Add another habit</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {unusedStarters.map((starter) => (
+                    <button
+                      key={starter.kind}
+                      className="rounded-lg border border-[#deddd8] px-3 py-1.5 text-[12px] font-semibold hover:border-[#d4d0f0]"
+                      onClick={() => void addStarter(starter)}
+                    >
+                      {starter.title}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : (
           <div className="mt-4">
             <p className="text-sm text-[#8f8e89]">
-              Add a walk, exercise, diet, or meditation routine to start tracking.
+              Add a walk, exercise, diet, or meditation habit to start tracking.
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               {starters.map((starter) => (
@@ -622,35 +945,46 @@ export function HealthView() {
           {medications.length ? (
             <div className="mt-4 space-y-2">
               {medications.map((item) => (
-                <div
+                <button
                   key={item.id}
-                  className="flex items-center gap-3 rounded-xl border border-[#ecebe7] px-3 py-2.5"
+                  type="button"
+                  className="flex w-full items-center gap-3 rounded-xl border border-[#ecebe7] px-3 py-2.5 text-left hover:border-[#d4d0f0]"
+                  onClick={() => void toggleMedication(item)}
                 >
-                  <button
-                    aria-label={`Mark ${item.name} ${item.taken ? "not taken" : "taken"}`}
+                  <span
                     className={`grid size-[19px] shrink-0 place-items-center rounded-full border ${
                       item.taken
                         ? "border-[#55a276] bg-[#55a276] text-white"
                         : "border-[#cac9c4] bg-white"
                     }`}
-                    onClick={() => void toggleMedication(item)}
                   >
                     {item.taken ? <Check size={12} strokeWidth={3} /> : null}
-                  </button>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[13px] font-semibold">{item.name}</p>
-                    <p className="text-[11px] text-[#8f8e89]">
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[13px] font-semibold">{item.name}</span>
+                    <span className="text-[11px] text-[#8f8e89]">
                       {[item.dose, item.schedule].filter(Boolean).join(" · ") || "As prescribed"}
-                    </p>
-                  </div>
-                  <button
+                    </span>
+                  </span>
+                  <span
+                    role="button"
+                    tabIndex={0}
                     aria-label={`Delete ${item.name}`}
                     className="rounded-md p-1 text-[#aaa9a4] hover:text-[#a7463d]"
-                    onClick={() => void removeMedication(item.id)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void removeMedication(item.id);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.stopPropagation();
+                        void removeMedication(item.id);
+                      }
+                    }}
                   >
                     <Trash2 size={13} />
-                  </button>
-                </div>
+                  </span>
+                </button>
               ))}
             </div>
           ) : (
@@ -669,8 +1003,12 @@ export function HealthView() {
             {symptomChips.map((name) => (
               <button
                 key={name}
-                className="rounded-lg border border-[#deddd8] px-2.5 py-1 text-[11px] font-semibold hover:border-[#d4d0f0]"
-                onClick={() => void addSymptom(name)}
+                className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold ${
+                  symptomName === name
+                    ? "bg-[#292927] text-white"
+                    : "border border-[#deddd8] hover:border-[#d4d0f0]"
+                }`}
+                onClick={() => setSymptomName(name)}
               >
                 {name}
               </button>
@@ -679,7 +1017,7 @@ export function HealthView() {
           <div className="mt-3 flex gap-2">
             <input
               className="min-w-0 flex-1 rounded-lg border border-[#deddd8] bg-[#fafaf8] px-3 py-2 text-[12px] outline-none focus:border-[#8a79dc]"
-              placeholder="Other symptom"
+              placeholder="Symptom name"
               value={symptomName}
               onChange={(event) => setSymptomName(event.target.value)}
             />
@@ -695,10 +1033,11 @@ export function HealthView() {
               ))}
             </select>
             <button
-              className="rounded-lg bg-[#292927] px-3 py-2 text-[11px] font-semibold text-white"
+              className="rounded-lg bg-[#292927] px-3 py-2 text-[11px] font-semibold text-white disabled:opacity-50"
+              disabled={!symptomName.trim()}
               onClick={() => void addSymptom()}
             >
-              Log
+              Add
             </button>
           </div>
           {symptoms.length ? (
@@ -825,6 +1164,14 @@ export function HealthView() {
   );
 }
 
+function directionLabel(direction: NonNullable<HealthInsight["direction"]>) {
+  if (direction === "right") return "On track";
+  if (direction === "wrong") return "Off track";
+  if (direction === "improving") return "Improving";
+  if (direction === "declining") return "Declining";
+  return "No change";
+}
+
 function SummaryCard({
   label,
   value,
@@ -842,37 +1189,6 @@ function SummaryCard({
       <p className="mt-2 text-2xl font-bold">{value}</p>
       <p className="mt-1 text-[12px] text-[#8f8e89]">{hint}</p>
     </div>
-  );
-}
-
-function VitalField({
-  label,
-  value,
-  onSave,
-  icon,
-}: {
-  label: string;
-  value: number | null;
-  onSave: (value: number | null) => void;
-  icon?: ReactNode;
-}) {
-  return (
-    <label className="block">
-      <span className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-[0.12em] text-[#9a9994]">
-        {icon}
-        {label}
-      </span>
-      <input
-        type="number"
-        step="any"
-        className="mt-2 w-full rounded-lg border border-[#deddd8] bg-[#fafaf8] px-3 py-2 text-sm outline-none focus:border-[#8a79dc]"
-        defaultValue={value ?? ""}
-        key={`${label}-${value ?? ""}`}
-        onBlur={(event) =>
-          onSave(event.target.value === "" ? null : Number(event.target.value))
-        }
-      />
-    </label>
   );
 }
 
@@ -901,7 +1217,7 @@ function RoutineModal({
   }
 
   return (
-    <Modal title="Add routine" onClose={onClose}>
+    <Modal title="Add habit" onClose={onClose}>
       <label className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#9a9994]">
         Type
       </label>
@@ -937,7 +1253,7 @@ function RoutineModal({
       </div>
       <input
         className="mt-3 w-full rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none focus:border-[#8a79dc]"
-        placeholder="Routine name"
+        placeholder="Habit name"
         value={title}
         onChange={(event) => setTitle(event.target.value)}
       />

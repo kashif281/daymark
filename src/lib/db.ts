@@ -5,16 +5,24 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
-function hasHealthModels(client: PrismaClient | undefined) {
+function hasRequiredModels(client: PrismaClient | undefined) {
+  const typed = client as
+    | {
+        healthCheckIn?: { findMany?: unknown };
+        spendEntry?: { findMany?: unknown };
+        healthJourneyInsight?: { findMany?: unknown };
+      }
+    | undefined;
   return (
-    typeof (client as { healthCheckIn?: { findMany?: unknown } } | undefined)
-      ?.healthCheckIn?.findMany === "function"
+    typeof typed?.healthCheckIn?.findMany === "function" &&
+    typeof typed?.spendEntry?.findMany === "function" &&
+    typeof typed?.healthJourneyInsight?.findMany === "function"
   );
 }
 
 export function getDb() {
   const cached = globalForPrisma.prisma;
-  if (cached && hasHealthModels(cached)) {
+  if (cached && hasRequiredModels(cached)) {
     return cached;
   }
 
@@ -31,9 +39,9 @@ export function getDb() {
   const adapter = new PrismaPg({ connectionString });
   const client = new PrismaClient({ adapter });
 
-  if (!hasHealthModels(client)) {
+  if (!hasRequiredModels(client)) {
     throw new Error(
-      "Prisma client is missing health models. Run `npx prisma generate` and restart the dev server.",
+      "Prisma client is missing models. Run `npx prisma generate` and restart the dev server.",
     );
   }
 
