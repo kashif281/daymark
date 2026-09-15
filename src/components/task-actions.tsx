@@ -260,7 +260,7 @@ export function TaskActions({
               </div>
               <textarea
                 id={`task-description-${task.id}`}
-                className="mt-2 min-h-28 w-full resize-y rounded-xl border border-[#deddd8] bg-[#fafaf8] px-3 py-2.5 text-sm outline-none transition focus:border-[#8a79dc] focus:ring-3 focus:ring-[#8a79dc]/10"
+                className="mt-2 min-h-40 w-full resize-y rounded-xl border border-[#deddd8] bg-[#fafaf8] px-3 py-2.5 text-sm outline-none transition focus:border-[#8a79dc] focus:ring-3 focus:ring-[#8a79dc]/10"
                 disabled={loading}
                 placeholder={
                   loading
