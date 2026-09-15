@@ -4,6 +4,7 @@ import {
   Archive,
   ArrowLeft,
   Check,
+  ChevronDown,
   Clock3,
   ExternalLink,
   FileText,
@@ -29,6 +30,8 @@ import {
   handleBulletKeyDown,
   localDateInput,
   normalizeBulletText,
+  weekLabel,
+  weekStartKey,
 } from "@/lib/task-notes";
 
 type Status = "todo" | "progress" | "done";
@@ -98,6 +101,12 @@ export default function ProjectPage({
   const [newTaskHours, setNewTaskHours] = useState("");
   const [newTaskDate, setNewTaskDate] = useState(localDateInput());
   const [bulletMode, setBulletMode] = useState(false);
+  const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [collapsedWeeks, setCollapsedWeeks] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [messageComposer, setMessageComposer] = useState<
     "client" | "queued" | null
   >(null);
@@ -115,16 +124,42 @@ export default function ProjectPage({
       .finally(() => setLoading(false));
   }, [id]);
 
-  const tasksByDate = useMemo(() => {
+  const tasksByWeek = useMemo(() => {
     const tasks = project?.tasks ?? [];
-    const groups = new Map<string, Task[]>();
+    const weeks = new Map<
+      string,
+      { label: string; days: Map<string, Task[]> }
+    >();
+
     for (const task of tasks) {
-      const key = task.workDate || localDateInput();
-      const list = groups.get(key) ?? [];
-      list.push(task);
-      groups.set(key, list);
+      const date = task.workDate || localDateInput();
+      const week = weekStartKey(date);
+      if (!weeks.has(week)) {
+        weeks.set(week, {
+          label: weekLabel(week),
+          days: new Map(),
+        });
+      }
+      const weekGroup = weeks.get(week)!;
+      const dayTasks = weekGroup.days.get(date) ?? [];
+      dayTasks.push(task);
+      weekGroup.days.set(date, dayTasks);
     }
-    return [...groups.entries()].sort(([a], [b]) => b.localeCompare(a));
+
+    return [...weeks.entries()]
+      .sort(([a], [b]) => b.localeCompare(a))
+      .map(([week, group]) => ({
+        week,
+        label: group.label,
+        days: [...group.days.entries()].sort(([a], [b]) => b.localeCompare(a)),
+        taskCount: [...group.days.values()].reduce(
+          (sum, list) => sum + list.length,
+          0,
+        ),
+        hours: [...group.days.values()]
+          .flat()
+          .reduce((sum, task) => sum + (task.hoursWorked ?? 0), 0),
+      }));
   }, [project]);
 
   const taskCounts = useMemo(() => {
@@ -135,6 +170,24 @@ export default function ProjectPage({
       hours: tasks.reduce((sum, task) => sum + (task.hoursWorked ?? 0), 0),
     };
   }, [project]);
+
+  function toggleTaskExpanded(taskId: string) {
+    setExpandedTaskIds((current) => {
+      const next = new Set(current);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  }
+
+  function toggleWeekCollapsed(week: string) {
+    setCollapsedWeeks((current) => {
+      const next = new Set(current);
+      if (next.has(week)) next.delete(week);
+      else next.add(week);
+      return next;
+    });
+  }
 
   function setTaskStatus(taskId: string, status: Status) {
     if (!project) return;
@@ -563,102 +616,197 @@ export default function ProjectPage({
           <section className="overflow-hidden rounded-2xl border border-[#e6e5e0] bg-white">
             <div className="flex items-center justify-between border-b border-[#ecebe7] px-5 py-4">
               <h2 className="text-sm font-bold">All tasks</h2>
-              <span className="text-xs text-[#999893]">Grouped by day</span>
+              <span className="text-xs text-[#999893]">Grouped by week</span>
             </div>
-            {tasksByDate.length ? (
-              <div className="space-y-5 p-3">
-                {tasksByDate.map(([date, tasks]) => (
-                  <div key={date}>
-                    <p className="mb-2 px-2 text-[11px] font-bold text-[#9a9994]">
-                      {date === localDateInput()
-                        ? "Today"
-                        : formatWorkDate(date, true)}
-                      <span className="ml-2 font-medium">
-                        {tasks.length} task{tasks.length === 1 ? "" : "s"}
-                        {(() => {
-                          const hours = tasks.reduce(
-                            (sum, task) => sum + (task.hoursWorked ?? 0),
-                            0,
-                          );
-                          return hours ? ` · ${hours}h` : "";
-                        })()}
-                      </span>
-                    </p>
-                    <div className="space-y-3">
-                      {tasks.map((task) => (
-                        <div
-                          key={task.id}
-                          className={`flex w-full items-start gap-3 rounded-xl border px-4 py-4 text-left transition-colors ${statusStyle[task.status].card}`}
-                        >
-                          <span
-                            className={`mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border ${
-                              task.status === "done"
-                                ? "border-[#55a276] bg-[#55a276] text-white"
-                                : task.status === "progress"
-                                  ? "border-[#dda04f] bg-[#fff7e7] text-[#c48431]"
-                                  : "border-[#cac9c4]"
-                            }`}
-                          >
-                            {task.status === "done" ? (
-                              <Check size={12} strokeWidth={3} />
-                            ) : task.status === "progress" ? (
-                              <Clock3 size={11} />
-                            ) : null}
-                          </span>
-                          <span className="min-w-0 flex-1">
-                            <span
-                              className={`block text-sm ${
-                                task.status === "done"
-                                  ? "text-[#999893] line-through"
-                                  : ""
-                              }`}
-                            >
-                              {task.title}
-                            </span>
-                            {task.hoursWorked != null ? (
-                              <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-[#5f4db9]">
-                                <Clock3 size={11} />
-                                {task.hoursWorked}h
-                              </span>
-                            ) : null}
-                            {task.description ? (
-                              <span className="mt-1 block whitespace-pre-wrap text-xs leading-5 text-[#8f8e89]">
-                                {task.description}
-                              </span>
-                            ) : null}
-                            {task.screenshotUrl ? (
-                              <a
-                                href={task.screenshotUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-[#6553c6] hover:underline"
-                              >
-                                <ExternalLink size={12} /> Open screenshots
-                              </a>
-                            ) : null}
-                          </span>
-                          <select
-                            aria-label={`Change status for ${task.title}`}
-                            className={`rounded-lg border-0 px-2.5 py-1.5 text-[11px] font-semibold outline-none ${statusStyle[task.status].select}`}
-                            value={task.status}
-                            onChange={(event) =>
-                              setTaskStatus(task.id, event.target.value as Status)
-                            }
-                          >
-                            <option value="todo">Not started</option>
-                            <option value="progress">In progress</option>
-                            <option value="done">Done</option>
-                          </select>
-                          <TaskActions
-                            task={task}
-                            onUpdate={(updates) => updateTask(task.id, updates)}
-                            onDelete={() => removeTask(task.id)}
-                          />
+            {tasksByWeek.length ? (
+              <div className="space-y-2 p-3">
+                {tasksByWeek.map((weekGroup) => {
+                  const collapsed = collapsedWeeks.has(weekGroup.week);
+                  return (
+                    <div
+                      key={weekGroup.week}
+                      className="overflow-hidden rounded-xl border border-[#ecebe7]"
+                    >
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-2 bg-[#fafaf8] px-4 py-3 text-left hover:bg-[#f5f5f2]"
+                        onClick={() => toggleWeekCollapsed(weekGroup.week)}
+                      >
+                        <ChevronDown
+                          size={16}
+                          className={`shrink-0 text-[#8b8a85] transition ${
+                            collapsed ? "-rotate-90" : ""
+                          }`}
+                        />
+                        <span className="flex-1 text-sm font-bold">
+                          {weekGroup.label}
+                        </span>
+                        <span className="text-[11px] font-semibold text-[#9a9994]">
+                          {weekGroup.taskCount} task
+                          {weekGroup.taskCount === 1 ? "" : "s"}
+                          {weekGroup.hours ? ` · ${weekGroup.hours}h` : ""}
+                        </span>
+                      </button>
+                      {!collapsed ? (
+                        <div className="space-y-4 border-t border-[#ecebe7] p-3">
+                          {weekGroup.days.map(([date, tasks]) => (
+                            <div key={date}>
+                              <p className="mb-2 px-1 text-[11px] font-bold text-[#9a9994]">
+                                {date === localDateInput()
+                                  ? "Today"
+                                  : formatWorkDate(date, true)}
+                              </p>
+                              <div className="space-y-2">
+                                {tasks.map((task) => {
+                                  const expanded = expandedTaskIds.has(task.id);
+                                  const hasDetails = Boolean(
+                                    task.description ||
+                                      task.screenshotUrl ||
+                                      task.hoursWorked != null,
+                                  );
+                                  return (
+                                    <div
+                                      key={task.id}
+                                      className={`rounded-xl border transition-colors ${statusStyle[task.status].card}`}
+                                    >
+                                      <div className="flex w-full items-start gap-3 px-4 py-3">
+                                        <span
+                                          className={`mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border ${
+                                            task.status === "done"
+                                              ? "border-[#55a276] bg-[#55a276] text-white"
+                                              : task.status === "progress"
+                                                ? "border-[#dda04f] bg-[#fff7e7] text-[#c48431]"
+                                                : "border-[#cac9c4]"
+                                          }`}
+                                        >
+                                          {task.status === "done" ? (
+                                            <Check size={12} strokeWidth={3} />
+                                          ) : task.status === "progress" ? (
+                                            <Clock3 size={11} />
+                                          ) : null}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          className="min-w-0 flex-1 text-left"
+                                          onClick={() =>
+                                            toggleTaskExpanded(task.id)
+                                          }
+                                        >
+                                          <span
+                                            className={`block text-sm ${
+                                              task.status === "done"
+                                                ? "text-[#999893] line-through"
+                                                : ""
+                                            }`}
+                                          >
+                                            {task.title}
+                                          </span>
+                                          {!expanded && hasDetails ? (
+                                            <span className="mt-1 block truncate text-[11px] text-[#9a9994]">
+                                              {task.hoursWorked != null
+                                                ? `${task.hoursWorked}h`
+                                                : ""}
+                                              {task.hoursWorked != null &&
+                                              task.description
+                                                ? " · "
+                                                : ""}
+                                              {task.description
+                                                ? task.description
+                                                    .replace(/\n/g, " ")
+                                                    .slice(0, 80)
+                                                : ""}
+                                            </span>
+                                          ) : null}
+                                        </button>
+                                        <select
+                                          aria-label={`Change status for ${task.title}`}
+                                          className={`rounded-lg border-0 px-2.5 py-1.5 text-[11px] font-semibold outline-none ${statusStyle[task.status].select}`}
+                                          value={task.status}
+                                          onChange={(event) =>
+                                            setTaskStatus(
+                                              task.id,
+                                              event.target.value as Status,
+                                            )
+                                          }
+                                        >
+                                          <option value="todo">Not started</option>
+                                          <option value="progress">
+                                            In progress
+                                          </option>
+                                          <option value="done">Done</option>
+                                        </select>
+                                        <button
+                                          type="button"
+                                          aria-label={
+                                            expanded
+                                              ? "Hide task details"
+                                              : "Show task details"
+                                          }
+                                          className="rounded-lg p-1.5 text-[#8b8a85] hover:bg-black/5"
+                                          onClick={() =>
+                                            toggleTaskExpanded(task.id)
+                                          }
+                                        >
+                                          <ChevronDown
+                                            size={16}
+                                            className={`transition ${
+                                              expanded ? "rotate-180" : ""
+                                            }`}
+                                          />
+                                        </button>
+                                        <TaskActions
+                                          task={task}
+                                          onUpdate={(updates) =>
+                                            updateTask(task.id, updates)
+                                          }
+                                          onDelete={() => removeTask(task.id)}
+                                        />
+                                      </div>
+                                      {expanded ? (
+                                        <div className="space-y-2 border-t border-black/5 px-4 py-3">
+                                          {task.hoursWorked != null ? (
+                                            <p className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#5f4db9]">
+                                              <Clock3 size={11} />
+                                              {task.hoursWorked}h logged
+                                            </p>
+                                          ) : (
+                                            <p className="text-[11px] text-[#9a9994]">
+                                              No hours logged
+                                            </p>
+                                          )}
+                                          {task.description ? (
+                                            <p className="whitespace-pre-wrap text-xs leading-5 text-[#686762]">
+                                              {task.description}
+                                            </p>
+                                          ) : (
+                                            <p className="text-xs text-[#9a9994]">
+                                              No description
+                                            </p>
+                                          )}
+                                          {task.screenshotUrl ? (
+                                            <a
+                                              href={task.screenshotUrl}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              className="inline-flex items-center gap-1 text-xs font-semibold text-[#6553c6] hover:underline"
+                                            >
+                                              <ExternalLink size={12} /> Open
+                                              screenshots
+                                            </a>
+                                          ) : null}
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      ) : null}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="px-5 py-12 text-center">
@@ -846,13 +994,11 @@ export default function ProjectPage({
       )}
       {composerOpen && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4 backdrop-blur-[2px]">
-          <div className="w-full max-w-md rounded-2xl border border-white/20 bg-white p-5 shadow-2xl">
-            <div className="flex items-center justify-between">
+          <div className="flex max-h-[min(44rem,calc(100dvh-2rem))] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-white/20 bg-white shadow-2xl">
+            <div className="flex shrink-0 items-center justify-between border-b border-[#ecebe7] px-5 py-4">
               <div>
                 <h2 className="text-base font-bold">Add a task</h2>
-                <p className="mt-1 text-xs text-[#8c8b86]">
-                  {project.name}
-                </p>
+                <p className="mt-1 text-xs text-[#8c8b86]">{project.name}</p>
               </div>
               <button
                 aria-label="Close"
@@ -862,87 +1008,106 @@ export default function ProjectPage({
                 <X size={17} />
               </button>
             </div>
-            <label className="mt-5 block text-xs font-bold text-[#62615d]">
-              Work date
-            </label>
-            <input
-              className="mt-2 w-full rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none transition focus:border-[#8a79dc]"
-              type="date"
-              value={newTaskDate}
-              onChange={(event) =>
-                setNewTaskDate(event.target.value || localDateInput())
-              }
-            />
-            <input
-              autoFocus
-              className="mt-3 w-full rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none transition focus:border-[#8a79dc] focus:ring-3 focus:ring-[#8a79dc]/10"
-              placeholder="What needs to be done?"
-              value={newTask}
-              onChange={(event) => setNewTask(event.target.value)}
-            />
-            <div className="mt-3 flex items-center justify-between gap-2">
-              <label className="text-xs font-bold text-[#62615d]">
-                Description
-              </label>
-              <button
-                type="button"
-                className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold ${
-                  bulletMode
-                    ? "bg-[#eeecfa] text-[#5f4db9]"
-                    : "text-[#8b8a85] hover:bg-[#f3f3f0]"
-                }`}
-                onClick={() => {
-                  setBulletMode((current) => {
-                    const next = !current;
-                    if (next) {
-                      setNewTaskDescription((value) => ensureBulletPrefix(value));
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="block text-xs font-bold text-[#62615d]">
+                    Work date
+                  </label>
+                  <input
+                    className="mt-2 w-full rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none transition focus:border-[#8a79dc]"
+                    type="date"
+                    value={newTaskDate}
+                    onChange={(event) =>
+                      setNewTaskDate(event.target.value || localDateInput())
                     }
-                    return next;
-                  });
-                }}
-              >
-                <List size={13} /> Bullets
-              </button>
-            </div>
-            <textarea
-              className="mt-2 min-h-[90px] w-full resize-y rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none transition focus:border-[#8a79dc] focus:ring-3 focus:ring-[#8a79dc]/10"
-              placeholder={
-                bulletMode ? "- What did you do?" : "Add a description (optional)"
-              }
-              value={newTaskDescription}
-              onChange={(event) => setNewTaskDescription(event.target.value)}
-              onKeyDown={(event) => {
-                if (bulletMode) {
-                  handleBulletKeyDown(
-                    event,
-                    newTaskDescription,
-                    setNewTaskDescription,
-                  );
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-[#62615d]">
+                    Hours worked{" "}
+                    <span className="font-medium text-[#999893]">(optional)</span>
+                  </label>
+                  <input
+                    className="mt-2 w-full rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none transition focus:border-[#8a79dc]"
+                    inputMode="decimal"
+                    min="0"
+                    placeholder="e.g. 1.5"
+                    step="0.25"
+                    type="number"
+                    value={newTaskHours}
+                    onChange={(event) => setNewTaskHours(event.target.value)}
+                  />
+                </div>
+              </div>
+              <label className="mt-4 block text-xs font-bold text-[#62615d]">
+                Title
+              </label>
+              <input
+                autoFocus
+                className="mt-2 w-full rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none transition focus:border-[#8a79dc] focus:ring-3 focus:ring-[#8a79dc]/10"
+                placeholder="What needs to be done?"
+                value={newTask}
+                onChange={(event) => setNewTask(event.target.value)}
+              />
+              <div className="mt-4 flex items-center justify-between gap-2">
+                <label className="text-xs font-bold text-[#62615d]">
+                  Description / details
+                </label>
+                <button
+                  type="button"
+                  className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold ${
+                    bulletMode
+                      ? "bg-[#eeecfa] text-[#5f4db9]"
+                      : "text-[#8b8a85] hover:bg-[#f3f3f0]"
+                  }`}
+                  onClick={() => {
+                    setBulletMode((current) => {
+                      const next = !current;
+                      if (next) {
+                        setNewTaskDescription((value) =>
+                          ensureBulletPrefix(value),
+                        );
+                      }
+                      return next;
+                    });
+                  }}
+                >
+                  <List size={13} /> Bullets
+                </button>
+              </div>
+              <textarea
+                className="mt-2 min-h-[220px] w-full resize-y rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm leading-6 outline-none transition focus:border-[#8a79dc] focus:ring-3 focus:ring-[#8a79dc]/10"
+                placeholder={
+                  bulletMode
+                    ? "- What did you do?\n- Next detail…"
+                    : "Add details, notes, or a bullet list of what you did…"
                 }
-              }}
-            ></textarea>
-            <label className="mt-3 block text-xs font-bold text-[#62615d]">
-              Hours worked{" "}
-              <span className="font-medium text-[#999893]">(optional)</span>
-            </label>
-            <input
-              className="mt-2 w-full rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none transition focus:border-[#8a79dc]"
-              inputMode="decimal"
-              min="0"
-              placeholder="e.g. 1.5"
-              step="0.25"
-              type="number"
-              value={newTaskHours}
-              onChange={(event) => setNewTaskHours(event.target.value)}
-            />
-            <input
-              className="mt-3 w-full rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none transition focus:border-[#8a79dc]"
-              placeholder="Google Drive screenshots link (optional)"
-              type="url"
-              value={newTaskScreenshotUrl}
-              onChange={(event) => setNewTaskScreenshotUrl(event.target.value)}
-            />
-            <div className="mt-5 flex justify-end gap-2">
+                value={newTaskDescription}
+                onChange={(event) => setNewTaskDescription(event.target.value)}
+                onKeyDown={(event) => {
+                  if (bulletMode) {
+                    handleBulletKeyDown(
+                      event,
+                      newTaskDescription,
+                      setNewTaskDescription,
+                    );
+                  }
+                }}
+              ></textarea>
+              <label className="mt-4 block text-xs font-bold text-[#62615d]">
+                Screenshots link{" "}
+                <span className="font-medium text-[#999893]">(optional)</span>
+              </label>
+              <input
+                className="mt-2 w-full rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none transition focus:border-[#8a79dc]"
+                placeholder="Google Drive screenshots link"
+                type="url"
+                value={newTaskScreenshotUrl}
+                onChange={(event) => setNewTaskScreenshotUrl(event.target.value)}
+              />
+            </div>
+            <div className="flex shrink-0 justify-end gap-2 border-t border-[#ecebe7] px-5 py-4">
               <button
                 className="rounded-lg px-4 py-2 text-xs font-semibold text-[#6e6d68] hover:bg-[#f3f3f0]"
                 onClick={() => setComposerOpen(false)}
