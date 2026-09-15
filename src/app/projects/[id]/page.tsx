@@ -23,7 +23,6 @@ import { EodModal } from "@/components/eod-modal";
 import { ClientMessageCard } from "@/components/client-message-card";
 import { PwaInstallHeaderButton } from "@/components/pwa-install-prompt";
 import { TaskActions } from "@/components/task-actions";
-import { TaskCalendar } from "@/components/task-calendar";
 import {
   ensureBulletPrefix,
   formatWorkDate,
@@ -97,12 +96,8 @@ export default function ProjectPage({
   const [newTaskDescription, setNewTaskDescription] = useState("");
   const [newTaskScreenshotUrl, setNewTaskScreenshotUrl] = useState("");
   const [newTaskHours, setNewTaskHours] = useState("");
+  const [newTaskDate, setNewTaskDate] = useState(localDateInput());
   const [bulletMode, setBulletMode] = useState(false);
-  const [selectedDate, setSelectedDate] = useState(localDateInput());
-  const [calendarMonth, setCalendarMonth] = useState(() => {
-    const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), 1);
-  });
   const [messageComposer, setMessageComposer] = useState<
     "client" | "queued" | null
   >(null);
@@ -120,23 +115,26 @@ export default function ProjectPage({
       .finally(() => setLoading(false));
   }, [id]);
 
-  const dayTasks = useMemo(
-    () => (project?.tasks ?? []).filter((task) => task.workDate === selectedDate),
-    [project, selectedDate],
-  );
-
-  const taskDates = useMemo(
-    () => new Set((project?.tasks ?? []).map((task) => task.workDate)),
-    [project],
-  );
+  const tasksByDate = useMemo(() => {
+    const tasks = project?.tasks ?? [];
+    const groups = new Map<string, Task[]>();
+    for (const task of tasks) {
+      const key = task.workDate || localDateInput();
+      const list = groups.get(key) ?? [];
+      list.push(task);
+      groups.set(key, list);
+    }
+    return [...groups.entries()].sort(([a], [b]) => b.localeCompare(a));
+  }, [project]);
 
   const taskCounts = useMemo(() => {
+    const tasks = project?.tasks ?? [];
     return {
-      done: dayTasks.filter((task) => task.status === "done").length,
-      total: dayTasks.length,
-      hours: dayTasks.reduce((sum, task) => sum + (task.hoursWorked ?? 0), 0),
+      done: tasks.filter((task) => task.status === "done").length,
+      total: tasks.length,
+      hours: tasks.reduce((sum, task) => sum + (task.hoursWorked ?? 0), 0),
     };
-  }, [dayTasks]);
+  }, [project]);
 
   function setTaskStatus(taskId: string, status: Status) {
     if (!project) return;
@@ -208,7 +206,7 @@ export default function ProjectPage({
           title,
           description,
           screenshotUrl,
-          workDate: selectedDate,
+          workDate: newTaskDate,
           hoursWorked:
             hoursWorked != null && Number.isFinite(hoursWorked)
               ? hoursWorked
@@ -222,6 +220,7 @@ export default function ProjectPage({
     setNewTaskDescription("");
     setNewTaskScreenshotUrl("");
     setNewTaskHours("");
+    setNewTaskDate(localDateInput());
     setBulletMode(false);
     setComposerOpen(false);
 
@@ -233,7 +232,7 @@ export default function ProjectPage({
         description,
         screenshotUrl,
         projectId: project.id,
-        workDate: selectedDate,
+        workDate: newTaskDate,
         hoursWorked:
           hoursWorked != null && Number.isFinite(hoursWorked)
             ? hoursWorked
@@ -260,6 +259,7 @@ export default function ProjectPage({
     setNewTaskDescription(bulletMode ? "- " : "");
     setNewTaskScreenshotUrl("");
     setNewTaskHours("");
+    setNewTaskDate(localDateInput());
     setComposerOpen(true);
   }
 
@@ -547,11 +547,8 @@ export default function ProjectPage({
               </p>
             ) : null}
             <p className="mt-2 text-sm text-[#85847f]">
-              {taskCounts.done} of {taskCounts.total} tasks on{" "}
-              {formatWorkDate(selectedDate, true)}
-              {taskCounts.hours
-                ? ` · ${taskCounts.hours}h logged`
-                : ""}
+              {taskCounts.done} of {taskCounts.total} tasks completed
+              {taskCounts.hours ? ` · ${taskCounts.hours}h logged` : ""}
             </p>
           </div>
           <button
@@ -563,115 +560,116 @@ export default function ProjectPage({
         </div>
 
         <div className="mt-9 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-          <div className="space-y-5">
-            <TaskCalendar
-              selectedDate={selectedDate}
-              taskDates={taskDates}
-              month={calendarMonth}
-              onMonthChange={setCalendarMonth}
-              onSelect={(date) => {
-                setSelectedDate(date);
-                const [year, month] = date.split("-").map(Number);
-                if (year && month) {
-                  setCalendarMonth(new Date(year, month - 1, 1));
-                }
-              }}
-            />
-
-            <section className="overflow-hidden rounded-2xl border border-[#e6e5e0] bg-white">
+          <section className="overflow-hidden rounded-2xl border border-[#e6e5e0] bg-white">
             <div className="flex items-center justify-between border-b border-[#ecebe7] px-5 py-4">
-              <h2 className="text-sm font-bold">
-                {selectedDate === localDateInput()
-                  ? "Today's tasks"
-                  : `Tasks · ${formatWorkDate(selectedDate)}`}
-              </h2>
-              <span className="text-xs text-[#999893]">Use the status menu</span>
+              <h2 className="text-sm font-bold">All tasks</h2>
+              <span className="text-xs text-[#999893]">Grouped by day</span>
             </div>
-            {dayTasks.length ? (
-              <div className="space-y-3 p-3">
-                {dayTasks.map((task) => (
-                  <div
-                    key={task.id}
-                    className={`flex w-full items-start gap-3 rounded-xl border px-4 py-4 text-left transition-colors ${statusStyle[task.status].card}`}
-                  >
-                    <span
-                      className={`mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border ${
-                        task.status === "done"
-                          ? "border-[#55a276] bg-[#55a276] text-white"
-                          : task.status === "progress"
-                            ? "border-[#dda04f] bg-[#fff7e7] text-[#c48431]"
-                            : "border-[#cac9c4]"
-                      }`}
-                    >
-                      {task.status === "done" ? (
-                        <Check size={12} strokeWidth={3} />
-                      ) : task.status === "progress" ? (
-                        <Clock3 size={11} />
-                      ) : null}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span
-                        className={`block text-sm ${
-                          task.status === "done"
-                            ? "text-[#999893] line-through"
-                            : ""
-                        }`}
-                      >
-                        {task.title}
+            {tasksByDate.length ? (
+              <div className="space-y-5 p-3">
+                {tasksByDate.map(([date, tasks]) => (
+                  <div key={date}>
+                    <p className="mb-2 px-2 text-[11px] font-bold text-[#9a9994]">
+                      {date === localDateInput()
+                        ? "Today"
+                        : formatWorkDate(date, true)}
+                      <span className="ml-2 font-medium">
+                        {tasks.length} task{tasks.length === 1 ? "" : "s"}
+                        {(() => {
+                          const hours = tasks.reduce(
+                            (sum, task) => sum + (task.hoursWorked ?? 0),
+                            0,
+                          );
+                          return hours ? ` · ${hours}h` : "";
+                        })()}
                       </span>
-                      {task.hoursWorked != null ? (
-                        <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-[#5f4db9]">
-                          <Clock3 size={11} />
-                          {task.hoursWorked}h
-                        </span>
-                      ) : null}
-                      {task.description ? (
-                        <span className="mt-1 block whitespace-pre-wrap text-xs leading-5 text-[#8f8e89]">
-                          {task.description}
-                        </span>
-                      ) : null}
-                      {task.screenshotUrl ? (
-                        <a
-                          href={task.screenshotUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-[#6553c6] hover:underline"
+                    </p>
+                    <div className="space-y-3">
+                      {tasks.map((task) => (
+                        <div
+                          key={task.id}
+                          className={`flex w-full items-start gap-3 rounded-xl border px-4 py-4 text-left transition-colors ${statusStyle[task.status].card}`}
                         >
-                          <ExternalLink size={12} /> Open screenshots
-                        </a>
-                      ) : null}
-                    </span>
-                    <select
-                      aria-label={`Change status for ${task.title}`}
-                      className={`rounded-lg border-0 px-2.5 py-1.5 text-[11px] font-semibold outline-none ${statusStyle[task.status].select}`}
-                      value={task.status}
-                      onChange={(event) =>
-                        setTaskStatus(task.id, event.target.value as Status)
-                      }
-                    >
-                      <option value="todo">Not started</option>
-                      <option value="progress">In progress</option>
-                      <option value="done">Done</option>
-                    </select>
-                    <TaskActions
-                      task={task}
-                      onUpdate={(updates) => updateTask(task.id, updates)}
-                      onDelete={() => removeTask(task.id)}
-                    />
+                          <span
+                            className={`mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border ${
+                              task.status === "done"
+                                ? "border-[#55a276] bg-[#55a276] text-white"
+                                : task.status === "progress"
+                                  ? "border-[#dda04f] bg-[#fff7e7] text-[#c48431]"
+                                  : "border-[#cac9c4]"
+                            }`}
+                          >
+                            {task.status === "done" ? (
+                              <Check size={12} strokeWidth={3} />
+                            ) : task.status === "progress" ? (
+                              <Clock3 size={11} />
+                            ) : null}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span
+                              className={`block text-sm ${
+                                task.status === "done"
+                                  ? "text-[#999893] line-through"
+                                  : ""
+                              }`}
+                            >
+                              {task.title}
+                            </span>
+                            {task.hoursWorked != null ? (
+                              <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-[#5f4db9]">
+                                <Clock3 size={11} />
+                                {task.hoursWorked}h
+                              </span>
+                            ) : null}
+                            {task.description ? (
+                              <span className="mt-1 block whitespace-pre-wrap text-xs leading-5 text-[#8f8e89]">
+                                {task.description}
+                              </span>
+                            ) : null}
+                            {task.screenshotUrl ? (
+                              <a
+                                href={task.screenshotUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-[#6553c6] hover:underline"
+                              >
+                                <ExternalLink size={12} /> Open screenshots
+                              </a>
+                            ) : null}
+                          </span>
+                          <select
+                            aria-label={`Change status for ${task.title}`}
+                            className={`rounded-lg border-0 px-2.5 py-1.5 text-[11px] font-semibold outline-none ${statusStyle[task.status].select}`}
+                            value={task.status}
+                            onChange={(event) =>
+                              setTaskStatus(task.id, event.target.value as Status)
+                            }
+                          >
+                            <option value="todo">Not started</option>
+                            <option value="progress">In progress</option>
+                            <option value="done">Done</option>
+                          </select>
+                          <TaskActions
+                            task={task}
+                            onUpdate={(updates) => updateTask(task.id, updates)}
+                            onDelete={() => removeTask(task.id)}
+                          />
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ))}
               </div>
             ) : (
               <div className="px-5 py-12 text-center">
                 <FileText className="mx-auto text-[#c4c3be]" size={24} />
-                <p className="mt-3 text-sm font-semibold">No tasks this day</p>
+                <p className="mt-3 text-sm font-semibold">No tasks yet</p>
                 <p className="mt-1 text-xs text-[#999893]">
-                  Add a task for {formatWorkDate(selectedDate)} or pick another day.
+                  Add the first task for this project.
                 </p>
               </div>
             )}
           </section>
-          </div>
 
           <div className="space-y-5">
             <section className="rounded-2xl border border-[#e6e5e0] bg-white p-5">
@@ -853,7 +851,7 @@ export default function ProjectPage({
               <div>
                 <h2 className="text-base font-bold">Add a task</h2>
                 <p className="mt-1 text-xs text-[#8c8b86]">
-                  {project.name} · {formatWorkDate(selectedDate, true)}
+                  {project.name}
                 </p>
               </div>
               <button
@@ -870,15 +868,10 @@ export default function ProjectPage({
             <input
               className="mt-2 w-full rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none transition focus:border-[#8a79dc]"
               type="date"
-              value={selectedDate}
-              onChange={(event) => {
-                const next = event.target.value || localDateInput();
-                setSelectedDate(next);
-                const [year, month] = next.split("-").map(Number);
-                if (year && month) {
-                  setCalendarMonth(new Date(year, month - 1, 1));
-                }
-              }}
+              value={newTaskDate}
+              onChange={(event) =>
+                setNewTaskDate(event.target.value || localDateInput())
+              }
             />
             <input
               autoFocus
