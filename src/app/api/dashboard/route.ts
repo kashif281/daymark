@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { TaskStatus } from "@/generated/prisma/enums";
 import { requireAppUser } from "@/lib/current-app-user";
 import { getDb } from "@/lib/db";
+import { dateKey, parseDateInput } from "@/lib/health";
+import { parseOptionalHours } from "@/lib/task-notes";
 
 const toUiStatus: Record<TaskStatus, "todo" | "progress" | "done"> = {
   NOT_STARTED: "todo",
@@ -79,6 +81,8 @@ export async function GET() {
           title: task.title,
           description: task.description,
           screenshotUrl: task.screenshotUrl,
+          workDate: dateKey(task.workDate),
+          hoursWorked: task.hoursWorked,
           status: toUiStatus[task.status],
         })),
         clientMessages: project.clientMessages.map((message) => ({
@@ -119,13 +123,23 @@ export async function POST(request: Request) {
       description?: string;
       screenshotUrl?: string;
       projectId?: string;
+      workDate?: string;
+      hoursWorked?: number | string | null;
     };
     const title = body.title?.trim();
     const description = body.description?.trim() || null;
     const screenshotUrl = body.screenshotUrl?.trim() || null;
+    const workDate = body.workDate
+      ? parseDateInput(body.workDate)
+      : todayUtc();
+    const hoursWorked = parseOptionalHours(body.hoursWorked);
 
     if (!title) {
       return NextResponse.json({ error: "Task title is required." }, { status: 400 });
+    }
+
+    if (!workDate) {
+      return NextResponse.json({ error: "Invalid work date." }, { status: 400 });
     }
 
     const db = getDb();
@@ -146,7 +160,8 @@ export async function POST(request: Request) {
         title,
         description,
         screenshotUrl,
-        workDate: todayUtc(),
+        workDate,
+        ...(hoursWorked !== undefined ? { hoursWorked } : {}),
       },
     });
 
@@ -158,6 +173,8 @@ export async function POST(request: Request) {
           title: task.title,
           description: task.description,
           screenshotUrl: task.screenshotUrl,
+          workDate: dateKey(task.workDate),
+          hoursWorked: task.hoursWorked,
           status: toUiStatus[task.status],
         },
       },

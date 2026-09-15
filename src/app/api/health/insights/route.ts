@@ -3,11 +3,17 @@ import { requireAppUser } from "@/lib/current-app-user";
 import { getDb } from "@/lib/db";
 import { dateKey, handleHealthError, parseDateInput, toUiCheckIn, utcDate } from "@/lib/health";
 
+const PREFERRED_MODELS = [
+  "gemini-3.5-flash",
+  "gemini-3.1-flash-lite",
+  "gemini-flash-latest",
+];
+
 const MODELS = [
-  process.env.GEMINI_MODEL,
-  "gemini-2.5-flash",
-  "gemini-2.0-flash",
-  "gemini-1.5-flash",
+  process.env.GEMINI_MODEL && !/^gemini-(1\.|2\.)/.test(process.env.GEMINI_MODEL)
+    ? process.env.GEMINI_MODEL
+    : null,
+  ...PREFERRED_MODELS,
 ].filter((value, index, list): value is string => Boolean(value) && list.indexOf(value) === index);
 
 const SYSTEM_PROMPT = `You are a health-focused AI assistant powered by Gemini Flash.
@@ -97,8 +103,9 @@ export async function GET(request: Request) {
       });
     }
 
+    const url = new URL(request.url);
     const today =
-      parseDateInput(new URL(request.url).searchParams.get("date")) ?? utcDate(0);
+      parseDateInput(url.searchParams.get("date")) ?? utcDate(0);
     const days = daysBack(today, 30);
     const start = days[0];
     const todayKey = dateKey(today);
@@ -232,6 +239,22 @@ export async function GET(request: Request) {
         changed: [],
         helping: null,
         hurting: null,
+      });
+    }
+
+    const refresh = url.searchParams.get("refresh") === "1";
+    const existingToday = previousInsights.find((item) => dateKey(item.logDate) === todayKey);
+    if (existingToday && !refresh) {
+      return NextResponse.json({
+        configured: true,
+        headline: existingToday.headline,
+        comparison: existingToday.comparison,
+        direction: existingToday.direction,
+        attention: existingToday.attention,
+        suggestions: asStringArray(existingToday.suggestions),
+        changed: asStringArray(existingToday.changed),
+        helping: existingToday.helping,
+        hurting: existingToday.hurting,
       });
     }
 

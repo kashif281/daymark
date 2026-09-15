@@ -1,12 +1,18 @@
 "use client";
 
 import {
+  List,
   MessageSquareText,
   MoreHorizontal,
   Trash2,
   X,
 } from "lucide-react";
 import { useState } from "react";
+import {
+  ensureBulletPrefix,
+  handleBulletKeyDown,
+  normalizeBulletText,
+} from "@/lib/task-notes";
 
 type TaskComment = {
   id: string;
@@ -21,10 +27,12 @@ type TaskActionsProps = {
     title: string;
     description?: string | null;
     screenshotUrl?: string | null;
+    hoursWorked?: number | null;
   };
   onUpdate: (updates: {
     description: string | null;
     screenshotUrl: string | null;
+    hoursWorked: number | null;
   }) => void;
   onDelete: () => void;
 };
@@ -37,6 +45,12 @@ export function TaskActions({
   const [open, setOpen] = useState(false);
   const [description, setDescription] = useState(task.description ?? "");
   const [screenshotUrl, setScreenshotUrl] = useState(task.screenshotUrl ?? "");
+  const [hoursWorked, setHoursWorked] = useState(
+    task.hoursWorked != null ? String(task.hoursWorked) : "",
+  );
+  const [bulletMode, setBulletMode] = useState(
+    Boolean(task.description?.includes("\n- ") || task.description?.startsWith("- ")),
+  );
   const [comments, setComments] = useState<TaskComment[]>([]);
   const [comment, setComment] = useState("");
   const [loading, setLoading] = useState(false);
@@ -50,6 +64,12 @@ export function TaskActions({
     setOpen(true);
     setDescription(task.description ?? "");
     setScreenshotUrl(task.screenshotUrl ?? "");
+    setHoursWorked(task.hoursWorked != null ? String(task.hoursWorked) : "");
+    setBulletMode(
+      Boolean(
+        task.description?.includes("\n- ") || task.description?.startsWith("- "),
+      ),
+    );
     setConfirmDelete(false);
     setError("");
     setLoading(true);
@@ -65,11 +85,21 @@ export function TaskActions({
       task: {
         description: string | null;
         screenshotUrl: string | null;
+        hoursWorked: number | null;
         comments: TaskComment[];
       };
     };
     setDescription(data.task.description ?? "");
     setScreenshotUrl(data.task.screenshotUrl ?? "");
+    setHoursWorked(
+      data.task.hoursWorked != null ? String(data.task.hoursWorked) : "",
+    );
+    setBulletMode(
+      Boolean(
+        data.task.description?.includes("\n- ") ||
+          data.task.description?.startsWith("- "),
+      ),
+    );
     setComments(data.task.comments);
     setLoading(false);
   }
@@ -77,12 +107,16 @@ export function TaskActions({
   async function saveDetails() {
     setSavingDetails(true);
     setError("");
+    const cleanedDescription = bulletMode
+      ? normalizeBulletText(description)
+      : description.trim();
     const response = await fetch(`/api/tasks/${task.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        description: description.trim() || null,
+        description: cleanedDescription || null,
         screenshotUrl: screenshotUrl.trim() || null,
+        hoursWorked: hoursWorked.trim() === "" ? null : hoursWorked.trim(),
       }),
     });
 
@@ -93,13 +127,21 @@ export function TaskActions({
     }
 
     const data = (await response.json()) as {
-      task: { description: string | null; screenshotUrl: string | null };
+      task: {
+        description: string | null;
+        screenshotUrl: string | null;
+        hoursWorked: number | null;
+      };
     };
     setDescription(data.task.description ?? "");
     setScreenshotUrl(data.task.screenshotUrl ?? "");
+    setHoursWorked(
+      data.task.hoursWorked != null ? String(data.task.hoursWorked) : "",
+    );
     onUpdate({
       description: data.task.description,
       screenshotUrl: data.task.screenshotUrl,
+      hoursWorked: data.task.hoursWorked,
     });
     setSavingDetails(false);
   }
@@ -191,19 +233,67 @@ export function TaskActions({
             ) : null}
 
             <div className="mt-5">
-              <label
-                className="text-xs font-bold text-[#4d4c48]"
-                htmlFor={`task-description-${task.id}`}
-              >
-                Description
-              </label>
+              <div className="flex items-center justify-between gap-2">
+                <label
+                  className="text-xs font-bold text-[#4d4c48]"
+                  htmlFor={`task-description-${task.id}`}
+                >
+                  Description
+                </label>
+                <button
+                  type="button"
+                  className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold ${
+                    bulletMode
+                      ? "bg-[#eeecfa] text-[#5f4db9]"
+                      : "text-[#8b8a85] hover:bg-[#f3f3f0]"
+                  }`}
+                  onClick={() => {
+                    setBulletMode((current) => {
+                      const next = !current;
+                      if (next) setDescription((value) => ensureBulletPrefix(value));
+                      return next;
+                    });
+                  }}
+                >
+                  <List size={13} /> Bullets
+                </button>
+              </div>
               <textarea
                 id={`task-description-${task.id}`}
                 className="mt-2 min-h-28 w-full resize-y rounded-xl border border-[#deddd8] bg-[#fafaf8] px-3 py-2.5 text-sm outline-none transition focus:border-[#8a79dc] focus:ring-3 focus:ring-[#8a79dc]/10"
                 disabled={loading}
-                placeholder={loading ? "Loading…" : "Add a description"}
+                placeholder={
+                  loading
+                    ? "Loading…"
+                    : bulletMode
+                      ? "- What did you do?"
+                      : "Add a description"
+                }
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
+                onKeyDown={(event) => {
+                  if (bulletMode) {
+                    handleBulletKeyDown(event, description, setDescription);
+                  }
+                }}
+              />
+              <label
+                className="mt-4 block text-xs font-bold text-[#4d4c48]"
+                htmlFor={`task-hours-${task.id}`}
+              >
+                Hours worked <span className="font-medium text-[#999893]">(optional)</span>
+              </label>
+              <input
+                id={`task-hours-${task.id}`}
+                className="mt-2 w-full rounded-xl border border-[#deddd8] bg-[#fafaf8] px-3 py-2.5 text-sm outline-none transition focus:border-[#8a79dc] focus:ring-3 focus:ring-[#8a79dc]/10"
+                disabled={loading}
+                inputMode="decimal"
+                min="0"
+                placeholder="e.g. 1.5"
+                step="0.25"
+                type="number"
+                value={hoursWorked}
+                onChange={(event) => setHoursWorked(event.target.value)}
               />
               <label
                 className="mt-4 block text-xs font-bold text-[#4d4c48]"

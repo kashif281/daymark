@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireAppUser } from "@/lib/current-app-user";
 import { getDb } from "@/lib/db";
+import { dateKey } from "@/lib/health";
+import { parseOptionalHours } from "@/lib/task-notes";
 
 async function findOwnedTask(id: string, userId: string) {
   return getDb().task.findFirst({
@@ -23,6 +25,8 @@ export async function GET(
         title: true,
         description: true,
         screenshotUrl: true,
+        workDate: true,
+        hoursWorked: true,
         comments: {
           orderBy: { createdAt: "asc" },
           select: {
@@ -45,6 +49,8 @@ export async function GET(
         title: task.title,
         description: task.description,
         screenshotUrl: task.screenshotUrl,
+        workDate: dateKey(task.workDate),
+        hoursWorked: task.hoursWorked,
         comments: task.comments.map((comment) => ({
           id: comment.id,
           content: comment.content,
@@ -68,14 +74,16 @@ export async function PATCH(
     const body = (await request.json()) as {
       description?: string | null;
       screenshotUrl?: string | null;
+      hoursWorked?: number | string | null;
     };
 
     const hasDescription = Object.hasOwn(body, "description");
     const hasScreenshot = Object.hasOwn(body, "screenshotUrl");
+    const hasHours = Object.hasOwn(body, "hoursWorked");
 
-    if (!hasDescription && !hasScreenshot) {
+    if (!hasDescription && !hasScreenshot && !hasHours) {
       return NextResponse.json(
-        { error: "A description or screenshot link is required." },
+        { error: "A description, screenshot link, or hours value is required." },
         { status: 400 },
       );
     }
@@ -84,6 +92,8 @@ export async function PATCH(
     if (!task) {
       return NextResponse.json({ error: "Task not found." }, { status: 404 });
     }
+
+    const hoursWorked = hasHours ? parseOptionalHours(body.hoursWorked) : undefined;
 
     const updated = await getDb().task.update({
       where: { id: task.id },
@@ -94,11 +104,23 @@ export async function PATCH(
         ...(hasScreenshot
           ? { screenshotUrl: body.screenshotUrl?.trim() || null }
           : {}),
+        ...(hasHours ? { hoursWorked: hoursWorked ?? null } : {}),
       },
-      select: { id: true, description: true, screenshotUrl: true },
+      select: {
+        id: true,
+        description: true,
+        screenshotUrl: true,
+        workDate: true,
+        hoursWorked: true,
+      },
     });
 
-    return NextResponse.json({ task: updated });
+    return NextResponse.json({
+      task: {
+        ...updated,
+        workDate: dateKey(updated.workDate),
+      },
+    });
   } catch (error) {
     return handleError(error);
   }

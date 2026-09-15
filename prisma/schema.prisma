@@ -127,6 +127,7 @@ model Task {
   description   String?
   screenshotUrl String?
   workDate      DateTime   @db.Date
+  hoursWorked   Float?
   status        TaskStatus @default(NOT_STARTED)
   sortOrder     Int        @default(0)
   comments      TaskComment[]

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { ProjectStatus, TaskStatus } from "@/generated/prisma/enums";
 import { requireAppUser } from "@/lib/current-app-user";
 import { getDb } from "@/lib/db";
+import { dateKey } from "@/lib/health";
 
 const toUiStatus: Record<TaskStatus, "todo" | "progress" | "done"> = {
   NOT_STARTED: "todo",
@@ -41,6 +42,8 @@ export async function GET(
           title: task.title,
           description: task.description,
           screenshotUrl: task.screenshotUrl,
+          workDate: dateKey(task.workDate),
+          hoursWorked: task.hoursWorked,
           status: toUiStatus[task.status],
         })),
         clientMessages: project.clientMessages.map((message) => ({

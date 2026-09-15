@@ -7,6 +7,7 @@ import {
   Clock3,
   ExternalLink,
   FileText,
+  List,
   MessageSquareText,
   MoreHorizontal,
   Plus,
@@ -22,6 +23,14 @@ import { EodModal } from "@/components/eod-modal";
 import { ClientMessageCard } from "@/components/client-message-card";
 import { PwaInstallHeaderButton } from "@/components/pwa-install-prompt";
 import { TaskActions } from "@/components/task-actions";
+import { TaskCalendar } from "@/components/task-calendar";
+import {
+  ensureBulletPrefix,
+  formatWorkDate,
+  handleBulletKeyDown,
+  localDateInput,
+  normalizeBulletText,
+} from "@/lib/task-notes";
 
 type Status = "todo" | "progress" | "done";
 type Task = {
@@ -29,6 +38,8 @@ type Task = {
   title: string;
   description?: string | null;
   screenshotUrl?: string | null;
+  workDate: string;
+  hoursWorked?: number | null;
   status: Status;
 };
 type ClientMessage = {
@@ -85,6 +96,13 @@ export default function ProjectPage({
   const [newTask, setNewTask] = useState("");
   const [newTaskDescription, setNewTaskDescription] = useState("");
   const [newTaskScreenshotUrl, setNewTaskScreenshotUrl] = useState("");
+  const [newTaskHours, setNewTaskHours] = useState("");
+  const [bulletMode, setBulletMode] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(localDateInput());
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
   const [messageComposer, setMessageComposer] = useState<
     "client" | "queued" | null
   >(null);
@@ -102,13 +120,23 @@ export default function ProjectPage({
       .finally(() => setLoading(false));
   }, [id]);
 
+  const dayTasks = useMemo(
+    () => (project?.tasks ?? []).filter((task) => task.workDate === selectedDate),
+    [project, selectedDate],
+  );
+
+  const taskDates = useMemo(
+    () => new Set((project?.tasks ?? []).map((task) => task.workDate)),
+    [project],
+  );
+
   const taskCounts = useMemo(() => {
-    const tasks = project?.tasks ?? [];
     return {
-      done: tasks.filter((task) => task.status === "done").length,
-      total: tasks.length,
+      done: dayTasks.filter((task) => task.status === "done").length,
+      total: dayTasks.length,
+      hours: dayTasks.reduce((sum, task) => sum + (task.hoursWorked ?? 0), 0),
     };
-  }, [project]);
+  }, [dayTasks]);
 
   function setTaskStatus(taskId: string, status: Status) {
     if (!project) return;
@@ -131,7 +159,11 @@ export default function ProjectPage({
 
   function updateTask(
     taskId: string,
-    updates: { description: string | null; screenshotUrl: string | null },
+    updates: {
+      description: string | null;
+      screenshotUrl: string | null;
+      hoursWorked: number | null;
+    },
   ) {
     setProject((current) =>
       current
@@ -160,8 +192,12 @@ export default function ProjectPage({
     const title = newTask.trim();
     if (!project || !title) return;
 
-    const description = newTaskDescription.trim() || null;
+    const description = bulletMode
+      ? normalizeBulletText(newTaskDescription) || null
+      : newTaskDescription.trim() || null;
     const screenshotUrl = newTaskScreenshotUrl.trim() || null;
+    const hoursWorked =
+      newTaskHours.trim() === "" ? null : Number(newTaskHours);
     const temporaryId = `demo-${Date.now()}`;
     const updatedProject = {
       ...project,
@@ -172,6 +208,11 @@ export default function ProjectPage({
           title,
           description,
           screenshotUrl,
+          workDate: selectedDate,
+          hoursWorked:
+            hoursWorked != null && Number.isFinite(hoursWorked)
+              ? hoursWorked
+              : null,
           status: "todo" as const,
         },
       ],
@@ -180,6 +221,8 @@ export default function ProjectPage({
     setNewTask("");
     setNewTaskDescription("");
     setNewTaskScreenshotUrl("");
+    setNewTaskHours("");
+    setBulletMode(false);
     setComposerOpen(false);
 
     const response = await fetch("/api/dashboard", {
@@ -190,6 +233,11 @@ export default function ProjectPage({
         description,
         screenshotUrl,
         projectId: project.id,
+        workDate: selectedDate,
+        hoursWorked:
+          hoursWorked != null && Number.isFinite(hoursWorked)
+            ? hoursWorked
+            : null,
       }),
     });
     if (response.ok) {
@@ -205,6 +253,14 @@ export default function ProjectPage({
           : current,
       );
     }
+  }
+
+  function openComposer() {
+    setNewTask("");
+    setNewTaskDescription(bulletMode ? "- " : "");
+    setNewTaskScreenshotUrl("");
+    setNewTaskHours("");
+    setComposerOpen(true);
   }
 
   function openRename() {
@@ -491,26 +547,49 @@ export default function ProjectPage({
               </p>
             ) : null}
             <p className="mt-2 text-sm text-[#85847f]">
-              {taskCounts.done} of {taskCounts.total} tasks completed today
+              {taskCounts.done} of {taskCounts.total} tasks on{" "}
+              {formatWorkDate(selectedDate, true)}
+              {taskCounts.hours
+                ? ` · ${taskCounts.hours}h logged`
+                : ""}
             </p>
           </div>
           <button
             className="flex items-center gap-2 rounded-xl bg-[#292927] px-4 py-2.5 text-sm font-semibold text-white hover:bg-black"
-            onClick={() => setComposerOpen(true)}
+            onClick={openComposer}
           >
             <Plus size={16} /> Add task
           </button>
         </div>
 
         <div className="mt-9 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-          <section className="overflow-hidden rounded-2xl border border-[#e6e5e0] bg-white">
+          <div className="space-y-5">
+            <TaskCalendar
+              selectedDate={selectedDate}
+              taskDates={taskDates}
+              month={calendarMonth}
+              onMonthChange={setCalendarMonth}
+              onSelect={(date) => {
+                setSelectedDate(date);
+                const [year, month] = date.split("-").map(Number);
+                if (year && month) {
+                  setCalendarMonth(new Date(year, month - 1, 1));
+                }
+              }}
+            />
+
+            <section className="overflow-hidden rounded-2xl border border-[#e6e5e0] bg-white">
             <div className="flex items-center justify-between border-b border-[#ecebe7] px-5 py-4">
-              <h2 className="text-sm font-bold">Today&apos;s tasks</h2>
+              <h2 className="text-sm font-bold">
+                {selectedDate === localDateInput()
+                  ? "Today's tasks"
+                  : `Tasks · ${formatWorkDate(selectedDate)}`}
+              </h2>
               <span className="text-xs text-[#999893]">Use the status menu</span>
             </div>
-            {project.tasks.length ? (
+            {dayTasks.length ? (
               <div className="space-y-3 p-3">
-                {project.tasks.map((task) => (
+                {dayTasks.map((task) => (
                   <div
                     key={task.id}
                     className={`flex w-full items-start gap-3 rounded-xl border px-4 py-4 text-left transition-colors ${statusStyle[task.status].card}`}
@@ -540,8 +619,14 @@ export default function ProjectPage({
                       >
                         {task.title}
                       </span>
+                      {task.hoursWorked != null ? (
+                        <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-[#5f4db9]">
+                          <Clock3 size={11} />
+                          {task.hoursWorked}h
+                        </span>
+                      ) : null}
                       {task.description ? (
-                        <span className="mt-1 block text-xs leading-5 text-[#8f8e89]">
+                        <span className="mt-1 block whitespace-pre-wrap text-xs leading-5 text-[#8f8e89]">
                           {task.description}
                         </span>
                       ) : null}
@@ -579,13 +664,14 @@ export default function ProjectPage({
             ) : (
               <div className="px-5 py-12 text-center">
                 <FileText className="mx-auto text-[#c4c3be]" size={24} />
-                <p className="mt-3 text-sm font-semibold">No tasks yet</p>
+                <p className="mt-3 text-sm font-semibold">No tasks this day</p>
                 <p className="mt-1 text-xs text-[#999893]">
-                  Add the first task for this project.
+                  Add a task for {formatWorkDate(selectedDate)} or pick another day.
                 </p>
               </div>
             )}
           </section>
+          </div>
 
           <div className="space-y-5">
             <section className="rounded-2xl border border-[#e6e5e0] bg-white p-5">
@@ -766,7 +852,9 @@ export default function ProjectPage({
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-base font-bold">Add a task</h2>
-                <p className="mt-1 text-xs text-[#8c8b86]">{project.name} · Today</p>
+                <p className="mt-1 text-xs text-[#8c8b86]">
+                  {project.name} · {formatWorkDate(selectedDate, true)}
+                </p>
               </div>
               <button
                 aria-label="Close"
@@ -776,19 +864,84 @@ export default function ProjectPage({
                 <X size={17} />
               </button>
             </div>
+            <label className="mt-5 block text-xs font-bold text-[#62615d]">
+              Work date
+            </label>
+            <input
+              className="mt-2 w-full rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none transition focus:border-[#8a79dc]"
+              type="date"
+              value={selectedDate}
+              onChange={(event) => {
+                const next = event.target.value || localDateInput();
+                setSelectedDate(next);
+                const [year, month] = next.split("-").map(Number);
+                if (year && month) {
+                  setCalendarMonth(new Date(year, month - 1, 1));
+                }
+              }}
+            />
             <input
               autoFocus
-              className="mt-5 w-full rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none transition focus:border-[#8a79dc] focus:ring-3 focus:ring-[#8a79dc]/10"
+              className="mt-3 w-full rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none transition focus:border-[#8a79dc] focus:ring-3 focus:ring-[#8a79dc]/10"
               placeholder="What needs to be done?"
               value={newTask}
               onChange={(event) => setNewTask(event.target.value)}
             />
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <label className="text-xs font-bold text-[#62615d]">
+                Description
+              </label>
+              <button
+                type="button"
+                className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold ${
+                  bulletMode
+                    ? "bg-[#eeecfa] text-[#5f4db9]"
+                    : "text-[#8b8a85] hover:bg-[#f3f3f0]"
+                }`}
+                onClick={() => {
+                  setBulletMode((current) => {
+                    const next = !current;
+                    if (next) {
+                      setNewTaskDescription((value) => ensureBulletPrefix(value));
+                    }
+                    return next;
+                  });
+                }}
+              >
+                <List size={13} /> Bullets
+              </button>
+            </div>
             <textarea
-              className="mt-3 min-h-[90px] w-full resize-y rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none transition focus:border-[#8a79dc] focus:ring-3 focus:ring-[#8a79dc]/10"
-              placeholder="Add a description (optional)"
+              className="mt-2 min-h-[90px] w-full resize-y rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none transition focus:border-[#8a79dc] focus:ring-3 focus:ring-[#8a79dc]/10"
+              placeholder={
+                bulletMode ? "- What did you do?" : "Add a description (optional)"
+              }
               value={newTaskDescription}
               onChange={(event) => setNewTaskDescription(event.target.value)}
+              onKeyDown={(event) => {
+                if (bulletMode) {
+                  handleBulletKeyDown(
+                    event,
+                    newTaskDescription,
+                    setNewTaskDescription,
+                  );
+                }
+              }}
             ></textarea>
+            <label className="mt-3 block text-xs font-bold text-[#62615d]">
+              Hours worked{" "}
+              <span className="font-medium text-[#999893]">(optional)</span>
+            </label>
+            <input
+              className="mt-2 w-full rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none transition focus:border-[#8a79dc]"
+              inputMode="decimal"
+              min="0"
+              placeholder="e.g. 1.5"
+              step="0.25"
+              type="number"
+              value={newTaskHours}
+              onChange={(event) => setNewTaskHours(event.target.value)}
+            />
             <input
               className="mt-3 w-full rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none transition focus:border-[#8a79dc]"
               placeholder="Google Drive screenshots link (optional)"

@@ -93,6 +93,8 @@ type Task = {
   title: string;
   description?: string | null;
   screenshotUrl?: string | null;
+  workDate?: string;
+  hoursWorked?: number | null;
   status: Status;
 };
 type ClientMessage = {
@@ -338,7 +340,11 @@ export default function Home() {
   function updateTask(
     projectId: string,
     taskId: string,
-    updates: { description: string | null; screenshotUrl: string | null },
+    updates: {
+      description: string | null;
+      screenshotUrl: string | null;
+      hoursWorked: number | null;
+    },
   ) {
     setProjects((current) =>
       current.map((project) =>

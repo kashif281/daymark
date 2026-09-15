@@ -8,6 +8,7 @@ import {
   Dumbbell,
   Footprints,
   HeartPulse,
+  Loader2,
   Moon,
   Pill,
   Plus,
@@ -17,7 +18,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { calendarWeekKeys } from "@/lib/health";
 
 export type HealthKind =
@@ -176,7 +177,9 @@ function ScoreButton({
 }) {
   return (
     <button
-      className={`size-8 rounded-lg text-[12px] font-semibold ${
+      type="button"
+      aria-pressed={selected}
+      className={`size-8 rounded-lg text-[12px] font-semibold transition-colors ${
         selected ? "bg-[#292927] text-white" : "border border-[#deddd8] text-[#5f5e5a]"
       }`}
       onClick={onClick}
@@ -218,8 +221,18 @@ export function HealthView() {
   const [symptomSeverity, setSymptomSeverity] = useState(5);
   const [vitalKind, setVitalKind] = useState<VitalKey>("weightKg");
   const [vitalValue, setVitalValue] = useState("");
+  const [checkInBusyField, setCheckInBusyField] = useState<string | null>(null);
+  const [checkInStatus, setCheckInStatus] = useState<"idle" | "saving" | "saved" | "error">(
+    "idle",
+  );
+  const checkInSaveSeq = useRef(0);
+  const checkInRef = useRef(checkIn);
+  const lastSleepBlurAt = useRef(0);
+  const checkInSaving = checkInStatus === "saving";
+  const [sleepDraft, setSleepDraft] = useState("");
 
   const load = useCallback(async () => {
+    const seq = checkInSaveSeq.current;
     const response = await fetch(`/api/health?date=${localDateInput()}`);
     if (!response.ok) {
       throw new Error("Could not load health");
@@ -232,7 +245,11 @@ export function HealthView() {
       symptoms: HealthSymptom[];
       medications: HealthMedication[];
     };
-    setCheckIn(data.checkIn);
+    if (checkInSaveSeq.current === seq) {
+      setCheckIn(data.checkIn);
+      checkInRef.current = data.checkIn;
+      setSleepDraft(data.checkIn.sleepHours == null ? "" : String(data.checkIn.sleepHours));
+    }
     setCheckIns(data.checkIns ?? []);
     setRoutines(data.routines);
     setPrescriptions(data.prescriptions);
@@ -240,15 +257,22 @@ export function HealthView() {
     setMedications(data.medications);
   }, []);
 
-  const loadInsight = useCallback(async () => {
+  const insightInFlight = useRef(false);
+  const loadInsight = useCallback(async (refresh = false) => {
+    if (insightInFlight.current && !refresh) return;
+    insightInFlight.current = true;
     setInsightLoading(true);
     try {
-      const response = await fetch(`/api/health/insights?date=${localDateInput()}`);
+      const refreshQuery = refresh ? "&refresh=1" : "";
+      const response = await fetch(
+        `/api/health/insights?date=${localDateInput()}${refreshQuery}`,
+      );
       if (!response.ok) throw new Error("Could not load insights");
       setInsight((await response.json()) as HealthInsight);
     } catch {
       setInsight(null);
     } finally {
+      insightInFlight.current = false;
       setInsightLoading(false);
     }
   }, []);
@@ -261,19 +285,69 @@ export function HealthView() {
 
   useEffect(() => {
     if (loading) return;
-    const timer = window.setTimeout(() => {
-      void loadInsight();
-    }, 1200);
-    return () => window.clearTimeout(timer);
-  }, [loading, checkIn, routines, symptoms, medications, loadInsight]);
+    void loadInsight(false);
+  }, [loading, loadInsight]);
 
-  async function saveCheckIn(patch: Partial<HealthCheckIn>) {
-    const response = await fetch("/api/health/check-in", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...patch, date: localDateInput() }),
-    });
-    if (response.ok) await load();
+  async function saveCheckIn(
+    patch: Partial<HealthCheckIn> | ((current: HealthCheckIn) => Partial<HealthCheckIn>),
+  ) {
+    const current = checkInRef.current;
+    const applied = typeof patch === "function" ? patch(current) : patch;
+    const next = { ...current, ...applied };
+    checkInRef.current = next;
+    setCheckIn(next);
+    const field = Object.keys(applied)[0] ?? "checkIn";
+    const seq = ++checkInSaveSeq.current;
+    setCheckInBusyField(field);
+    setCheckInStatus("saving");
+    try {
+      const response = await fetch("/api/health/check-in", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...applied, date: localDateInput() }),
+      });
+      if (!response.ok) throw new Error("Could not save check-in");
+      const data = (await response.json()) as { checkIn?: HealthCheckIn };
+      if (seq !== checkInSaveSeq.current) return;
+      if (data.checkIn) {
+        const merged = { ...checkInRef.current };
+        (Object.keys(applied) as (keyof HealthCheckIn)[]).forEach((key) => {
+          merged[key] = data.checkIn![key] as never;
+        });
+        checkInRef.current = merged;
+        setCheckIn(merged);
+      }
+      setCheckInStatus("saved");
+      window.setTimeout(() => {
+        if (seq === checkInSaveSeq.current) {
+          setCheckInStatus((status) => (status === "saved" ? "idle" : status));
+        }
+      }, 1400);
+    } catch {
+      if (seq !== checkInSaveSeq.current) return;
+      setCheckInStatus("error");
+      await load().catch(() => undefined);
+    } finally {
+      if (seq === checkInSaveSeq.current) setCheckInBusyField(null);
+    }
+  }
+
+  async function setCheckInScore(
+    field: "sleepQuality" | "mood" | "energy",
+    value: number,
+  ) {
+    const alreadySelected = checkInRef.current[field] === value;
+    const leavingHours = Date.now() - lastSleepBlurAt.current < 600;
+    const nextValue = alreadySelected && !leavingHours ? null : value;
+    if (field === "sleepQuality") {
+      const hours = sleepDraft === "" ? null : Number(sleepDraft);
+      await saveCheckIn({
+        sleepHours: hours != null && Number.isFinite(hours) ? hours : null,
+        sleepQuality: nextValue,
+      });
+      return;
+    }
+    await saveCheckIn({ [field]: nextValue });
   }
 
   async function addStarter(starter: (typeof starters)[number]) {
@@ -430,7 +504,7 @@ export function HealthView() {
           <button
             className="inline-flex items-center gap-1 rounded-lg border border-[#deddd8] px-2.5 py-1.5 text-[11px] font-semibold disabled:opacity-50"
             disabled={insightLoading}
-            onClick={() => void loadInsight()}
+            onClick={() => void loadInsight(true)}
           >
             <RotateCcw size={12} />
             {insightLoading ? "Checking…" : "Retry"}
@@ -545,11 +619,31 @@ export function HealthView() {
         />
       </div>
 
-      <div className="rounded-2xl border border-[#e6e5e0] bg-white p-5">
-        <h2 className="flex items-center gap-2 text-[13px] font-bold">
-          <Moon size={15} className="text-[#4b6fa8]" />
-          Daily check-in
-        </h2>
+      <div
+        className="relative rounded-2xl border border-[#e6e5e0] bg-white p-5"
+        aria-busy={checkInSaving}
+      >
+        {checkInSaving ? (
+          <span className="absolute inset-x-0 top-0 h-0.5 overflow-hidden rounded-t-2xl bg-[#ece9fb]">
+            <span className="block h-full w-1/2 animate-pulse bg-[#6d5bd0]" />
+          </span>
+        ) : null}
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="flex items-center gap-2 text-[13px] font-bold">
+            <Moon size={15} className="text-[#4b6fa8]" />
+            Daily check-in
+          </h2>
+          {checkInSaving ? (
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#6d5bd0]">
+              <Loader2 size={13} className="animate-spin" />
+              Saving
+            </span>
+          ) : checkInStatus === "saved" ? (
+            <span className="text-[11px] font-semibold text-[#367653]">Saved</span>
+          ) : checkInStatus === "error" ? (
+            <span className="text-[11px] font-semibold text-[#a7463d]">Could not save</span>
+          ) : null}
+        </div>
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
           <div>
             <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#9a9994]">
@@ -562,16 +656,18 @@ export function HealthView() {
               step={0.5}
               className="mt-2 w-full rounded-lg border border-[#deddd8] bg-[#fafaf8] px-3 py-2 text-sm outline-none focus:border-[#8a79dc]"
               placeholder="e.g. 7.5"
-              defaultValue={checkIn.sleepHours ?? ""}
-              key={`sleep-${checkIn.sleepHours ?? ""}`}
-              onBlur={(event) =>
-                void saveCheckIn({
-                  sleepHours: event.target.value === "" ? null : Number(event.target.value),
-                })
-              }
+              value={sleepDraft}
+              onChange={(event) => setSleepDraft(event.target.value)}
+              onBlur={() => {
+                lastSleepBlurAt.current = Date.now();
+                const parsed = sleepDraft === "" ? null : Number(sleepDraft);
+                const hours = parsed != null && Number.isFinite(parsed) ? parsed : null;
+                if (hours === checkInRef.current.sleepHours) return;
+                void saveCheckIn({ sleepHours: hours });
+              }}
             />
             <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.12em] text-[#9a9994]">
-              Sleep quality
+              Sleep quality · 1 to 5
             </p>
             <div className="mt-2 flex gap-1.5">
               {[1, 2, 3, 4, 5].map((value) => (
@@ -579,7 +675,7 @@ export function HealthView() {
                   key={value}
                   value={value}
                   selected={checkIn.sleepQuality === value}
-                  onClick={() => void saveCheckIn({ sleepQuality: value })}
+                  onClick={() => void setCheckInScore("sleepQuality", value)}
                 />
               ))}
             </div>
@@ -590,24 +686,28 @@ export function HealthView() {
             </p>
             <div className="mt-2 flex items-center gap-2">
               <button
+                type="button"
+                aria-label="Remove one glass"
                 className="rounded-lg border border-[#deddd8] px-3 py-2 text-sm font-semibold"
                 onClick={() =>
                   void saveCheckIn({
-                    waterGlasses: Math.max(0, checkIn.waterGlasses - 1),
+                    waterGlasses: Math.max(0, checkInRef.current.waterGlasses - 1),
                   })
                 }
               >
                 −
               </button>
-              <p className="min-w-16 text-center text-lg font-bold">
+              <p className="min-w-16 text-center text-lg font-bold tabular-nums">
                 {checkIn.waterGlasses}
                 <span className="ml-1 text-sm font-semibold text-[#8f8e89]">/ 8</span>
               </p>
               <button
+                type="button"
+                aria-label="Add one glass"
                 className="rounded-lg border border-[#deddd8] px-3 py-2 text-sm font-semibold"
                 onClick={() =>
                   void saveCheckIn({
-                    waterGlasses: Math.min(30, checkIn.waterGlasses + 1),
+                    waterGlasses: Math.min(30, checkInRef.current.waterGlasses + 1),
                   })
                 }
               >
@@ -623,7 +723,7 @@ export function HealthView() {
                   key={value}
                   value={value}
                   selected={checkIn.mood === value}
-                  onClick={() => void saveCheckIn({ mood: value })}
+                  onClick={() => void setCheckInScore("mood", value)}
                 />
               ))}
             </div>
@@ -636,7 +736,7 @@ export function HealthView() {
                   key={value}
                   value={value}
                   selected={checkIn.energy === value}
-                  onClick={() => void saveCheckIn({ energy: value })}
+                  onClick={() => void setCheckInScore("energy", value)}
                 />
               ))}
             </div>
@@ -646,7 +746,6 @@ export function HealthView() {
           className="mt-4 min-h-20 w-full resize-y rounded-xl border border-[#deddd8] bg-[#fafaf8] px-4 py-3 text-sm outline-none focus:border-[#8a79dc]"
           placeholder="How do you feel today?"
           defaultValue={checkIn.notes ?? ""}
-          key={`notes-${checkIn.notes ?? ""}`}
           onBlur={(event) => void saveCheckIn({ notes: event.target.value || null })}
         />
       </div>
@@ -694,11 +793,14 @@ export function HealthView() {
               }}
             />
             <button
-              className="rounded-xl bg-[#6d5bd0] px-4 py-3 text-[12px] font-semibold text-white disabled:opacity-50"
-              disabled={vitalValue === ""}
+              className="inline-flex items-center justify-center gap-1 rounded-xl bg-[#6d5bd0] px-4 py-3 text-[12px] font-semibold text-white disabled:opacity-50"
+              disabled={vitalValue === "" || checkInBusyField === vitalKind}
               onClick={() => void addVital()}
             >
-              Add
+              {checkInBusyField === vitalKind ? (
+                <Loader2 size={13} className="animate-spin" />
+              ) : null}
+              {checkInBusyField === vitalKind ? "Adding…" : "Add"}
             </button>
           </div>
           {vitalOptions.some((item) => checkIn[item.key] != null) ? (
