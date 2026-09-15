@@ -63,3 +63,32 @@ export function formatWorkDate(value: string, weekday = false) {
     year: "numeric",
   }).format(new Date(year, month - 1, day));
 }
+
+/** Monday-based week start key (YYYY-MM-DD). */
+export function weekStartKey(dateKey: string) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  const offset = date.getDay() === 0 ? -6 : 1 - date.getDay();
+  date.setDate(date.getDate() + offset);
+  return localDateInput(date);
+}
+
+export function weekLabel(weekStart: string, todayKey = localDateInput()) {
+  const thisWeek = weekStartKey(todayKey);
+  const [y, m, d] = thisWeek.split("-").map(Number);
+  const lastWeekDate = new Date(y, m - 1, d - 7);
+  const lastWeek = localDateInput(lastWeekDate);
+
+  if (weekStart === thisWeek) return "This week";
+  if (weekStart === lastWeek) return "Last week";
+
+  const [sy, sm, sd] = weekStart.split("-").map(Number);
+  const start = new Date(sy, sm - 1, sd);
+  const end = new Date(sy, sm - 1, sd + 6);
+  const fmt = new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+  return `${fmt.format(start)} – ${fmt.format(end)}`;
+}
+
